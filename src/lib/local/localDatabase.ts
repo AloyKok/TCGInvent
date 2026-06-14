@@ -9,6 +9,7 @@ import type {
   Transaction
 } from '../../types/domain';
 import type { InventoryInput } from '../supabase/api';
+import { getLocalDateInputValue } from '../events/dateRange';
 
 const STORAGE_KEY = 'cardpulse-local-database-v4';
 export const LOCAL_USER_ID = '00000000-0000-4000-8000-000000000001';
@@ -44,7 +45,7 @@ export function getLocalDatabase(): LocalDatabase {
       parsed.events = parsed.events.map((event) => {
         const legacyEvent = event as ShowEvent & { date?: string };
         if (legacyEvent.startDate && legacyEvent.endDate) return event;
-        const fallbackDate = legacyEvent.date || new Date().toISOString().slice(0, 10);
+        const fallbackDate = legacyEvent.date || getLocalDateInputValue();
         const rest = { ...legacyEvent };
         delete rest.date;
         migrated = true;
@@ -386,8 +387,8 @@ function createSeedDatabase(): LocalDatabase {
     id: '66666666-6666-4666-8666-666666666666',
     orgId: LOCAL_ORG_ID,
     name: 'Weekend Card Show',
-    startDate: new Date().toISOString().slice(0, 10),
-    endDate: new Date().toISOString().slice(0, 10),
+    startDate: getLocalDateInputValue(),
+    endDate: getLocalDateInputValue(),
     location: 'Demo Hall'
   };
 

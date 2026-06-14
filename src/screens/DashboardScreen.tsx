@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Field, SelectInput } from '../components/Field';
-import { formatEventPeriod } from '../lib/events/dateRange';
+import { formatEventPeriod, getLocalDateInputValue } from '../lib/events/dateRange';
 import { listEvents, listInventory, listTransactions } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 
@@ -11,7 +11,7 @@ export function DashboardScreen() {
   const inventoryQuery = useQuery({ queryKey: ['inventory', organization.id, 'dashboard'], queryFn: () => listInventory(organization.id) });
   const salesQuery = useQuery({ queryKey: ['history', organization.id], queryFn: () => listTransactions(organization.id, 500) });
   const eventsQuery = useQuery({ queryKey: ['events', organization.id], queryFn: () => listEvents(organization.id) });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateInputValue();
   const inventory = useMemo(() => inventoryQuery.data || [], [inventoryQuery.data]);
   const transactions = useMemo(() => salesQuery.data || [], [salesQuery.data]);
   const events = useMemo(() => eventsQuery.data || [], [eventsQuery.data]);

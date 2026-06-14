@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, TextInput } from '../components/Field';
-import { formatEventPeriod } from '../lib/events/dateRange';
+import { formatEventPeriod, getLocalDateInputValue } from '../lib/events/dateRange';
 import { listEvents, listTransactions, saveEvent } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 
@@ -10,7 +10,7 @@ export function EventsScreen() {
   const { organization } = useOrg();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateInputValue();
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
   const [location, setLocation] = useState('');
