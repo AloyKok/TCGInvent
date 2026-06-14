@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Field, SelectInput } from '../components/Field';
+import { formatEventPeriod } from '../lib/events/dateRange';
 import { listEvents, listInventory, listTransactions } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 
@@ -58,7 +59,7 @@ export function DashboardScreen() {
             className="sm:min-w-72"
             options={[
               { value: '', label: 'All shows' },
-              ...events.map((event) => ({ value: event.id, label: `${event.name} / ${event.date}` }))
+              ...events.map((event) => ({ value: event.id, label: `${event.name} / ${formatEventPeriod(event)}` }))
             ]}
           />
         </Field>
@@ -85,7 +86,7 @@ export function DashboardScreen() {
             >
               <span className="min-w-0">
                 <strong className="block truncate">{event.name}</strong>
-                <span className="block break-words text-xs text-slate-600">{event.date} / {event.count} sales / ${event.average.toFixed(2)} average</span>
+                <span className="block break-words text-xs text-slate-600">{formatEventPeriod(event)} / {event.count} sales / ${event.average.toFixed(2)} average</span>
               </span>
               <strong className="text-lg">${event.revenue.toFixed(2)}</strong>
             </button>

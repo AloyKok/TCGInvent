@@ -5,6 +5,7 @@ import { CalendarDays, Minus, Plus, Search, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Field, SelectInput, TextArea, TextInput } from '../components/Field';
 import { QrScanner } from '../components/QrScanner';
+import { formatEventPeriod } from '../lib/events/dateRange';
 import { getCartSubtotal, useCartStore } from '../store/cartStore';
 import { completeSale, listEvents, listInventory } from '../lib/supabase/api';
 import { cacheInventory, getCachedInventory, queueSale, syncQueuedSales } from '../lib/queue/offlineQueue';
@@ -129,7 +130,7 @@ export function SellScreen() {
                 { value: '', label: 'Select a show before selling' },
                 ...events.map((event) => ({
                   value: event.id,
-                  label: `${event.name} / ${event.date}${event.location ? ` / ${event.location}` : ''}`
+                  label: `${event.name} / ${formatEventPeriod(event)}${event.location ? ` / ${event.location}` : ''}`
                 }))
               ]}
             />

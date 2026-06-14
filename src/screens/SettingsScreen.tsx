@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, SelectInput, TextInput } from '../components/Field';
+import { formatEventPeriod } from '../lib/events/dateRange';
 import { getSettings, listEvents, updateSettings } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 import type { CardLanguage } from '../types/domain';
@@ -65,7 +66,7 @@ export function SettingsScreen() {
               disabled={!isOwner}
               options={[
                 { value: '', label: 'None' },
-                ...(eventsQuery.data || []).map((event) => ({ value: event.id, label: event.name }))
+                ...(eventsQuery.data || []).map((event) => ({ value: event.id, label: `${event.name} / ${formatEventPeriod(event)}` }))
               ]}
             />
           </Field>

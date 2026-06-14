@@ -89,7 +89,8 @@ export function mapShowEvent(row: Tables['show_events']['Row']): ShowEvent {
     id: row.id,
     orgId: row.org_id,
     name: row.name,
-    date: row.date,
+    startDate: row.start_date,
+    endDate: row.end_date,
     location: row.location
   };
 }

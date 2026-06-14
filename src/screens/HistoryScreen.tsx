@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, SelectInput, TextInput } from '../components/Field';
+import { formatEventPeriod } from '../lib/events/dateRange';
 import { listEvents, listTransactions, voidSale } from '../lib/supabase/api';
 import { useMembershipsQuery, useOrg } from '../lib/org/OrgProvider';
 
@@ -26,8 +27,8 @@ export function HistoryScreen() {
     (!eventId || tx.eventId === eventId) &&
     (!adminId || tx.createdBy === adminId)
   );
-  const eventNames = useMemo(
-    () => new Map((eventsQuery.data || []).map((event) => [event.id, event.name])),
+  const eventLabels = useMemo(
+    () => new Map((eventsQuery.data || []).map((event) => [event.id, `${event.name} / ${formatEventPeriod(event)}`])),
     [eventsQuery.data]
   );
 
@@ -48,7 +49,7 @@ export function HistoryScreen() {
               onValueChange={setEventId}
               options={[
                 { value: '', label: 'All shows' },
-                ...(eventsQuery.data || []).map((event) => ({ value: event.id, label: event.name }))
+                ...(eventsQuery.data || []).map((event) => ({ value: event.id, label: `${event.name} / ${formatEventPeriod(event)}` }))
               ]}
             />
           </Field>
@@ -75,7 +76,7 @@ export function HistoryScreen() {
                 <p className="font-black">${tx.total.toFixed(2)} <span className="text-sm font-semibold text-slate-500">{tx.paymentMethod}</span></p>
                 <p className="text-xs text-slate-600">{new Date(tx.createdAt).toLocaleString()}</p>
                 <p className="mt-1 inline-flex max-w-full break-words rounded bg-sky-50 px-2 py-1 text-xs font-bold text-sky-800">
-                  {tx.eventId ? eventNames.get(tx.eventId) || 'Unknown show' : 'No show assigned'}
+                  {tx.eventId ? eventLabels.get(tx.eventId) || 'Unknown show' : 'No show assigned'}
                 </p>
                 <p className={`mt-1 text-xs font-bold ${tx.status === 'completed' ? 'text-action' : 'text-danger'}`}>{tx.status}</p>
               </div>

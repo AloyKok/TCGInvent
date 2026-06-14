@@ -141,9 +141,9 @@ export interface Database {
         Relationships: [];
       };
       show_events: {
-        Row: { id: string; org_id: string; name: string; date: string; location: string | null; created_at: string };
-        Insert: { id?: string; org_id: string; name: string; date: string; location?: string | null; created_at?: string };
-        Update: { id?: string; org_id?: string; name?: string; date?: string; location?: string | null; created_at?: string };
+        Row: { id: string; org_id: string; name: string; start_date: string; end_date: string; location: string | null; created_at: string };
+        Insert: { id?: string; org_id: string; name: string; start_date: string; end_date: string; location?: string | null; created_at?: string };
+        Update: { id?: string; org_id?: string; name?: string; start_date?: string; end_date?: string; location?: string | null; created_at?: string };
         Relationships: [];
       };
       settings: {

@@ -39,7 +39,19 @@ export function getLocalDatabase(): LocalDatabase {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
     try {
-      return JSON.parse(raw) as LocalDatabase;
+      const parsed = JSON.parse(raw) as LocalDatabase;
+      let migrated = false;
+      parsed.events = parsed.events.map((event) => {
+        const legacyEvent = event as ShowEvent & { date?: string };
+        if (legacyEvent.startDate && legacyEvent.endDate) return event;
+        const fallbackDate = legacyEvent.date || new Date().toISOString().slice(0, 10);
+        const rest = { ...legacyEvent };
+        delete rest.date;
+        migrated = true;
+        return { ...rest, startDate: fallbackDate, endDate: fallbackDate };
+      });
+      if (migrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      return parsed;
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -261,11 +273,12 @@ export function voidLocalSale(transactionId: string) {
 }
 
 export function getLocalEvents() {
-  return [...getLocalDatabase().events].sort((a, b) => b.date.localeCompare(a.date));
+  return [...getLocalDatabase().events].sort((a, b) => b.startDate.localeCompare(a.startDate));
 }
 
-export function saveLocalEvent(event: Pick<ShowEvent, 'name' | 'date' | 'location'>, id?: string) {
+export function saveLocalEvent(event: Pick<ShowEvent, 'name' | 'startDate' | 'endDate' | 'location'>, id?: string) {
   const db = getLocalDatabase();
+  if (event.endDate < event.startDate) throw new Error('End date cannot be before start date');
   if (id) {
     const existing = db.events.find((candidate) => candidate.id === id);
     if (!existing) throw new Error('Event not found');
@@ -373,7 +386,8 @@ function createSeedDatabase(): LocalDatabase {
     id: '66666666-6666-4666-8666-666666666666',
     orgId: LOCAL_ORG_ID,
     name: 'Weekend Card Show',
-    date: new Date().toISOString().slice(0, 10),
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: new Date().toISOString().slice(0, 10),
     location: 'Demo Hall'
   };
 

@@ -85,7 +85,8 @@ export interface ShowEvent {
   id: string;
   orgId: string;
   name: string;
-  date: string;
+  startDate: string;
+  endDate: string;
   location?: string | null;
 }
 

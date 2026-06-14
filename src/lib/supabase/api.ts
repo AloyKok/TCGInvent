@@ -305,17 +305,23 @@ export async function voidSale(orgId: string, transactionId: string) {
 
 export async function listEvents(orgId: string) {
   if (isLocalDemoMode) return getLocalEvents();
-  const { data, error } = await supabase.from('show_events').select('*').eq('org_id', orgId).order('date', { ascending: false });
+  const { data, error } = await supabase.from('show_events').select('*').eq('org_id', orgId).order('start_date', { ascending: false });
   if (error) throw error;
   return (data || []).map(mapShowEvent);
 }
 
-export async function saveEvent(orgId: string, event: Pick<ShowEvent, 'name' | 'date' | 'location'>, id?: string) {
+export async function saveEvent(orgId: string, event: Pick<ShowEvent, 'name' | 'startDate' | 'endDate' | 'location'>, id?: string) {
   if (isLocalDemoMode) return saveLocalEvent(event, id);
+  if (event.endDate < event.startDate) throw new Error('End date cannot be before start date');
   if (id) {
     const { data, error } = await supabase
       .from('show_events')
-      .update({ name: event.name, date: event.date, location: event.location || null })
+      .update({
+        name: event.name,
+        start_date: event.startDate,
+        end_date: event.endDate,
+        location: event.location || null
+      })
       .eq('org_id', orgId)
       .eq('id', id)
       .select('*')
@@ -326,7 +332,13 @@ export async function saveEvent(orgId: string, event: Pick<ShowEvent, 'name' | '
 
   const { data, error } = await supabase
     .from('show_events')
-    .insert({ org_id: orgId, name: event.name, date: event.date, location: event.location || null })
+    .insert({
+      org_id: orgId,
+      name: event.name,
+      start_date: event.startDate,
+      end_date: event.endDate,
+      location: event.location || null
+    })
     .select('*')
     .single();
   if (error) throw error;
