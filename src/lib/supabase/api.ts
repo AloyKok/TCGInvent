@@ -293,14 +293,21 @@ export async function completeSale(payload: Omit<QueuedSale, 'id' | 'createdAt' 
 
 export async function listTransactions(orgId: string, limit = 100) {
   if (isLocalDemoMode) return getLocalTransactions(limit);
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return (data || []).map(mapTransaction);
+  const pageSize = Math.min(1000, limit);
+  const rows: Database['public']['Tables']['transactions']['Row'][] = [];
+  for (let offset = 0; offset < limit; offset += pageSize) {
+    const requested = Math.min(pageSize, limit - offset);
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + requested - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < requested) break;
+  }
+  return rows.map(mapTransaction);
 }
 
 export async function voidSale(orgId: string, transactionId: string) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { CalendarDays, Minus, Plus, Search, Trash2 } from 'lucide-react';
+import { CalendarDays, CalendarRange, Minus, Plus, Search, ShoppingBag, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Field, SelectInput, TextArea, TextInput } from '../components/Field';
 import { QrScanner } from '../components/QrScanner';
@@ -31,6 +31,8 @@ export function SellScreen() {
   const inventory = useMemo(() => inventoryQuery.data || [], [inventoryQuery.data]);
   const events = useMemo(() => eventsQuery.data || [], [eventsQuery.data]);
   const selectedEvent = events.find((event) => event.id === cart.eventId);
+  const hasSaleContext = cart.saleMode === 'daily' || (cart.saleMode === 'show' && Boolean(selectedEvent));
+  const saleContextLabel = cart.saleMode === 'daily' ? 'Daily sales' : selectedEvent?.name || 'Not selected';
   const subtotal = getCartSubtotal(cart.lines);
   const total = Math.min(subtotal, Math.max(0, cart.finalTotal ?? subtotal));
   const discount = Math.max(0, subtotal - total);
@@ -52,8 +54,8 @@ export function SellScreen() {
   }, [inventory, organization.id]);
 
   const addScannedItem = useCallback(async (value: string) => {
-    if (!selectedEvent) {
-      showFeedback(setFlash, 'error', 'Select a card show before adding items');
+    if (!hasSaleContext) {
+      showFeedback(setFlash, 'error', 'Choose Daily sales or select a card show');
       return;
     }
     const item = await resolveItem(value);
@@ -67,18 +69,18 @@ export function SellScreen() {
     }
     cart.addItem(item, 1);
     showFeedback(setFlash, 'ok', `${item.itemName} $${item.askingPrice.toFixed(2)}`);
-  }, [cart, resolveItem, selectedEvent]);
+  }, [cart, hasSaleContext, resolveItem]);
 
   const checkoutMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedEvent) throw new Error('Select a card show before completing the sale');
+      if (!hasSaleContext) throw new Error('Choose Daily sales or select a card show');
       if (!cart.lines.length) throw new Error('Cart is empty');
       const payload = {
         orgId: organization.id,
         cart: cart.lines.map((line) => ({ inventoryItemId: line.item.id, quantity: line.quantity })),
         discount,
         paymentMethod: cart.paymentMethod,
-        eventId: selectedEvent.id,
+        eventId: cart.saleMode === 'show' ? selectedEvent?.id || null : null,
         clientRef: crypto.randomUUID(),
         notes: cart.notes || null
       };
@@ -114,39 +116,66 @@ export function SellScreen() {
           <h2 className="text-2xl font-black">Sell</h2>
           <p className="text-sm text-slate-600">Scan CardPulse labels or use manual lookup.</p>
         </div>
-        <div className="rounded-lg border border-line bg-white p-3 shadow-sm">
-          <Field label="Card show">
-            <SelectInput
-              value={cart.eventId}
-              onValueChange={(nextEventId) => {
-                if (cart.lines.length && nextEventId !== cart.eventId) {
-                  if (!confirm('Changing the show will clear the current cart. Continue?')) return;
-                  cart.clear();
-                }
-                cart.setEventId(nextEventId);
-                setFlash(null);
-              }}
-              options={[
-                { value: '', label: 'Select a show before selling' },
-                ...events.map((event) => ({
-                  value: event.id,
-                  label: `${event.name} / ${formatEventPeriod(event)}${event.location ? ` / ${event.location}` : ''}`
-                }))
-              ]}
-            />
-          </Field>
-          {!eventsQuery.isLoading && events.length === 0 && (
-            <Link to="/events" className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-md bg-action px-4 py-2 text-sm font-semibold text-white">
-              <CalendarDays size={18} /> Create first show
-            </Link>
+        <div className="grid gap-3 rounded-lg border border-line bg-white p-3 shadow-sm">
+          <div>
+            <p className="text-sm font-bold text-slate-700">Sale tracking</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                aria-pressed={cart.saleMode === 'daily'}
+                className={`flex min-h-14 min-w-0 items-center justify-center gap-2 rounded-md border px-3 text-sm font-bold ${cart.saleMode === 'daily' ? 'border-action bg-emerald-50 text-action' : 'border-line bg-white text-slate-700'}`}
+                onClick={() => changeSaleMode('daily')}
+              >
+                <ShoppingBag className="shrink-0" size={19} /> Daily sales
+              </button>
+              <button
+                type="button"
+                aria-pressed={cart.saleMode === 'show'}
+                className={`flex min-h-14 min-w-0 items-center justify-center gap-2 rounded-md border px-3 text-sm font-bold ${cart.saleMode === 'show' ? 'border-action bg-emerald-50 text-action' : 'border-line bg-white text-slate-700'}`}
+                onClick={() => changeSaleMode('show')}
+              >
+                <CalendarRange className="shrink-0" size={19} /> Card show
+              </button>
+            </div>
+          </div>
+          {cart.saleMode === 'show' && (
+            <>
+              <Field label="Card show">
+                <SelectInput
+                  value={cart.eventId}
+                  onValueChange={(nextEventId) => {
+                    if (cart.lines.length && nextEventId !== cart.eventId) {
+                      if (!confirm('Changing the show will clear the current cart. Continue?')) return;
+                      cart.clear();
+                    }
+                    cart.setEventId(nextEventId);
+                    setFlash(null);
+                  }}
+                  options={[
+                    { value: '', label: 'Select a show before selling' },
+                    ...events.map((event) => ({
+                      value: event.id,
+                      label: `${event.name} / ${formatEventPeriod(event)}${event.location ? ` / ${event.location}` : ''}`
+                    }))
+                  ]}
+                />
+              </Field>
+              {!eventsQuery.isLoading && events.length === 0 && (
+                <Link to="/events" className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-action px-4 py-2 text-sm font-semibold text-white">
+                  <CalendarDays size={18} /> Create first show
+                </Link>
+              )}
+            </>
           )}
-          {selectedEvent && (
-            <p className="mt-2 text-sm font-semibold text-action">
-              Sales will be recorded under {selectedEvent.name}.
+          {hasSaleContext && (
+            <p className="text-sm font-semibold text-action">
+              {cart.saleMode === 'daily'
+                ? 'Sales will be recorded as daily transactions.'
+                : `Sales will be recorded under ${selectedEvent?.name}.`}
             </p>
           )}
         </div>
-        {selectedEvent ? (
+        {hasSaleContext ? (
           <>
             <QrScanner active onScan={addScannedItem} onError={setScannerError} />
             {scannerError && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">{scannerError}</p>}
@@ -155,8 +184,8 @@ export function SellScreen() {
           <div className="grid min-h-48 place-items-center rounded-lg border border-dashed border-line bg-slate-50 p-6 text-center">
             <div>
               <CalendarDays className="mx-auto text-slate-400" size={32} />
-              <p className="mt-2 font-bold">Select a card show to start selling</p>
-              <p className="mt-1 text-sm text-slate-600">Scanner and manual lookup will unlock for that show.</p>
+              <p className="mt-2 font-bold">Choose how to track this sale</p>
+              <p className="mt-1 text-sm text-slate-600">Use Daily sales or select a card show.</p>
             </div>
           </div>
         )}
@@ -169,26 +198,26 @@ export function SellScreen() {
           className="rounded-lg border border-line bg-white p-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!selectedEvent) return;
+            if (!hasSaleContext) return;
             addScannedItem(manual);
             setManual('');
           }}
         >
           <Field label="Manual add">
-          <div className="flex min-w-0 gap-2">
+            <div className="flex min-w-0 gap-2">
               <TextInput
                 className="min-w-0 flex-1"
                 placeholder="Item number or QR UUID"
                 value={manual}
                 onChange={(event) => setManual(event.target.value)}
-                disabled={!selectedEvent}
+                disabled={!hasSaleContext}
               />
-              <Button className="grid min-w-11 place-items-center px-3" aria-label="Add manual item" disabled={!selectedEvent || !manual.trim()}>
+              <Button className="grid min-w-11 place-items-center px-3" aria-label="Add manual item" disabled={!hasSaleContext || !manual.trim()}>
                 <Search size={18} />
               </Button>
             </div>
           </Field>
-          {selectedEvent && <ManualResults items={inventory} query={manual} onAdd={addScannedItem} />}
+          {hasSaleContext && <ManualResults items={inventory} query={manual} onAdd={addScannedItem} />}
         </form>
       </section>
 
@@ -231,8 +260,8 @@ export function SellScreen() {
         <div className="sticky bottom-20 rounded-lg border border-line bg-white p-3 shadow-soft">
           <div className="grid gap-3">
             <div className="rounded-md bg-slate-50 p-3">
-              <p className="text-xs font-semibold uppercase text-slate-500">Card show</p>
-              <p className="mt-1 font-bold">{selectedEvent?.name || 'Not selected'}</p>
+              <p className="text-xs font-semibold uppercase text-slate-500">Sale tracking</p>
+              <p className="mt-1 font-bold">{saleContextLabel}</p>
             </div>
             <div className="flex justify-between text-sm"><span>Subtotal</span><strong>${subtotal.toFixed(2)}</strong></div>
             <Field label="Final total">
@@ -262,7 +291,7 @@ export function SellScreen() {
               <TextArea value={cart.notes} onChange={(event) => cart.setNotes(event.target.value)} />
             </Field>
             {checkoutMutation.error && <p className="text-sm text-danger">{checkoutMutation.error.message}</p>}
-            <Button className="min-h-14 text-base" disabled={!selectedEvent || !cart.lines.length || checkoutMutation.isPending} onClick={() => checkoutMutation.mutate()}>
+            <Button className="min-h-14 text-base" disabled={!hasSaleContext || !cart.lines.length || checkoutMutation.isPending} onClick={() => checkoutMutation.mutate()}>
               {checkoutMutation.isPending ? 'Completing...' : `Complete $${total.toFixed(2)}`}
             </Button>
           </div>
@@ -270,6 +299,15 @@ export function SellScreen() {
       </aside>
     </div>
   );
+
+  function changeSaleMode(nextMode: 'daily' | 'show') {
+    if (nextMode === cart.saleMode) return;
+    if (cart.lines.length && !confirm('Changing sale tracking will clear the current cart. Continue?')) return;
+    if (cart.lines.length) cart.clear();
+    cart.setSaleMode(nextMode);
+    if (nextMode === 'daily') cart.setEventId('');
+    setFlash(null);
+  }
 }
 
 function ManualResults({ items, query, onAdd }: { items: InventoryItem[]; query: string; onAdd: (value: string) => void }) {

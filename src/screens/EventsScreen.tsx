@@ -15,7 +15,7 @@ export function EventsScreen() {
   const [endDate, setEndDate] = useState(today);
   const [location, setLocation] = useState('');
   const query = useQuery({ queryKey: ['events', organization.id], queryFn: () => listEvents(organization.id) });
-  const salesQuery = useQuery({ queryKey: ['history', organization.id], queryFn: () => listTransactions(organization.id, 1000) });
+  const salesQuery = useQuery({ queryKey: ['history', organization.id], queryFn: () => listTransactions(organization.id, 5000) });
   const mutation = useMutation({
     mutationFn: () => saveEvent(organization.id, { name, startDate, endDate, location }),
     onSuccess: async () => {

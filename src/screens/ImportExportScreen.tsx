@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Papa from 'papaparse';
 import { Button } from '../components/Button';
 import { Field, TextArea } from '../components/Field';
-import { listInventory, listTransactions, saveInventoryItem, type InventoryInput } from '../lib/supabase/api';
+import { getRevenueMonth } from '../lib/reports/revenuePeriods';
+import { listEvents, listInventory, listTransactions, saveInventoryItem, type InventoryInput } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 import { useAuth } from '../lib/supabase/AuthProvider';
 import type {
@@ -22,7 +23,8 @@ export function ImportExportScreen() {
   const [csv, setCsv] = useState('');
   const [report, setReport] = useState<string[]>([]);
   const inventoryQuery = useQuery({ queryKey: ['inventory', organization.id, 'export'], queryFn: () => listInventory(organization.id) });
-  const salesQuery = useQuery({ queryKey: ['history', organization.id], queryFn: () => listTransactions(organization.id, 1000) });
+  const salesQuery = useQuery({ queryKey: ['history', organization.id], queryFn: () => listTransactions(organization.id, 5000) });
+  const eventsQuery = useQuery({ queryKey: ['events', organization.id], queryFn: () => listEvents(organization.id) });
   const importMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('Not signed in');
@@ -88,10 +90,15 @@ export function ImportExportScreen() {
     image_url: item.imageUrl || '',
     notes: item.notes || ''
   }))), [inventoryQuery.data]);
-  const salesCsv = useMemo(() => Papa.unparse((salesQuery.data || []).flatMap((tx) =>
-    tx.lineItems.map((line) => ({
+  const salesCsv = useMemo(() => {
+    const eventsById = new Map((eventsQuery.data || []).map((event) => [event.id, event]));
+    return Papa.unparse((salesQuery.data || []).flatMap((tx) =>
+      tx.lineItems.map((line) => ({
       transaction_id: tx.id,
       created_at: tx.createdAt,
+      revenue_month: getRevenueMonth(tx, eventsById),
+      sale_type: tx.eventId ? 'show' : 'daily',
+      show_name: tx.eventId ? eventsById.get(tx.eventId)?.name || 'Unknown show' : '',
       status: tx.status,
       payment_method: tx.paymentMethod,
       total: tx.total,
@@ -107,7 +114,8 @@ export function ImportExportScreen() {
       line_total: line.lineTotal,
       created_by: tx.createdBy
     }))
-  )), [salesQuery.data]);
+    ));
+  }, [eventsQuery.data, salesQuery.data]);
 
   return (
     <div className="grid gap-4">

@@ -3,16 +3,24 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, SelectInput, TextInput } from '../components/Field';
 import { formatEventPeriod } from '../lib/events/dateRange';
+import {
+  formatMonthLabel,
+  getLocalDateKey,
+  getLocalMonthKey,
+  getRevenueMonth,
+  matchesSaleScope
+} from '../lib/reports/revenuePeriods';
 import { listEvents, listTransactions, voidSale } from '../lib/supabase/api';
 import { useMembershipsQuery, useOrg } from '../lib/org/OrgProvider';
 
 export function HistoryScreen() {
   const { organization } = useOrg();
+  const [month, setMonth] = useState(getLocalMonthKey());
   const [date, setDate] = useState('');
-  const [eventId, setEventId] = useState('');
+  const [saleScope, setSaleScope] = useState('');
   const [adminId, setAdminId] = useState('');
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ['history', organization.id], queryFn: () => listTransactions(organization.id, 500) });
+  const query = useQuery({ queryKey: ['history', organization.id], queryFn: () => listTransactions(organization.id, 5000) });
   const eventsQuery = useQuery({ queryKey: ['events', organization.id], queryFn: () => listEvents(organization.id) });
   const membershipsQuery = useMembershipsQuery();
   const mutation = useMutation({
@@ -22,14 +30,19 @@ export function HistoryScreen() {
       await queryClient.invalidateQueries({ queryKey: ['inventory', organization.id] });
     }
   });
+  const events = useMemo(() => eventsQuery.data || [], [eventsQuery.data]);
+  const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
   const rows = (query.data || []).filter((tx) =>
-    (!date || tx.createdAt.slice(0, 10) === date) &&
-    (!eventId || tx.eventId === eventId) &&
+    (!month || getRevenueMonth(tx, eventsById) === month) &&
+    (!date || getLocalDateKey(tx.createdAt) === date) &&
+    matchesSaleScope(tx, saleScope) &&
     (!adminId || tx.createdBy === adminId)
   );
+  const completedRows = rows.filter((tx) => tx.status === 'completed');
+  const completedRevenue = completedRows.reduce((sum, tx) => sum + tx.total, 0);
   const eventLabels = useMemo(
-    () => new Map((eventsQuery.data || []).map((event) => [event.id, `${event.name} / ${formatEventPeriod(event)}`])),
-    [eventsQuery.data]
+    () => new Map(events.map((event) => [event.id, `${event.name} / ${formatEventPeriod(event)}`])),
+    [events]
   );
 
   return (
@@ -37,19 +50,26 @@ export function HistoryScreen() {
       <div className="grid gap-3 md:flex md:items-end md:justify-between">
         <div>
           <h2 className="text-2xl font-black">History</h2>
-          <p className="text-sm text-slate-600">{rows.length} transactions</p>
+          <p className="text-sm text-slate-600">
+            {rows.length} transactions / ${completedRevenue.toFixed(2)} completed revenue
+          </p>
         </div>
-        <div className="grid gap-2 min-[400px]:grid-cols-2 md:grid-cols-3">
+        <div className="grid gap-2 min-[400px]:grid-cols-2 xl:grid-cols-4">
+          <Field label="Revenue month">
+            <TextInput type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
+          </Field>
           <Field label="Date">
             <TextInput type="date" value={date} onChange={(event) => setDate(event.target.value)} />
           </Field>
-          <Field label="Event">
+          <Field label="Sales source">
             <SelectInput
-              value={eventId}
-              onValueChange={setEventId}
+              value={saleScope}
+              onValueChange={setSaleScope}
               options={[
-                { value: '', label: 'All shows' },
-                ...(eventsQuery.data || []).map((event) => ({ value: event.id, label: `${event.name} / ${formatEventPeriod(event)}` }))
+                { value: '', label: 'All sales' },
+                { value: 'daily', label: 'Daily sales' },
+                { value: 'shows', label: 'All card shows' },
+                ...events.map((event) => ({ value: event.id, label: `${event.name} / ${formatEventPeriod(event)}` }))
               ]}
             />
           </Field>
@@ -76,8 +96,13 @@ export function HistoryScreen() {
                 <p className="font-black">${tx.total.toFixed(2)} <span className="text-sm font-semibold text-slate-500">{tx.paymentMethod}</span></p>
                 <p className="text-xs text-slate-600">{new Date(tx.createdAt).toLocaleString()}</p>
                 <p className="mt-1 inline-flex max-w-full break-words rounded bg-sky-50 px-2 py-1 text-xs font-bold text-sky-800">
-                  {tx.eventId ? eventLabels.get(tx.eventId) || 'Unknown show' : 'No show assigned'}
+                  {tx.eventId ? eventLabels.get(tx.eventId) || 'Unknown show' : 'Daily sale'}
                 </p>
+                {tx.eventId && (
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Revenue month: {formatMonthLabel(getRevenueMonth(tx, eventsById))} (show start)
+                  </p>
+                )}
                 <p className={`mt-1 text-xs font-bold ${tx.status === 'completed' ? 'text-action' : 'text-danger'}`}>{tx.status}</p>
               </div>
               {tx.status === 'completed' && (
