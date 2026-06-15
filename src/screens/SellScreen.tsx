@@ -269,7 +269,7 @@ export function SellScreen() {
           </div>
         </div>
 
-        <div className="sticky bottom-20 rounded-lg border border-line bg-white p-3 shadow-soft">
+        <div className="rounded-lg border border-line bg-white p-3 shadow-soft lg:sticky lg:top-24 lg:self-start">
           <div className="grid gap-3">
             <div className="rounded-md bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase text-slate-500">Sale tracking</p>
