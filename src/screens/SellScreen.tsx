@@ -7,7 +7,7 @@ import { Field, SelectInput, TextArea, TextInput } from '../components/Field';
 import { QrScanner } from '../components/QrScanner';
 import { formatEventPeriod } from '../lib/events/dateRange';
 import { formatMoney } from '../lib/format/money';
-import { getCartSubtotal, useCartStore } from '../store/cartStore';
+import { getCartSubtotal, lineIdFor, lineUnitPrice, useCartStore } from '../store/cartStore';
 import { completeSale, getSettings, listEvents, listInventory } from '../lib/supabase/api';
 import { cacheInventory, getCachedInventory, queueSale, syncQueuedSales } from '../lib/queue/offlineQueue';
 import { useOrg } from '../lib/org/OrgProvider';
@@ -18,6 +18,8 @@ export function SellScreen() {
   const queryClient = useQueryClient();
   const [scannerError, setScannerError] = useState('');
   const [manual, setManual] = useState('');
+  const [miscName, setMiscName] = useState('Others');
+  const [miscAmount, setMiscAmount] = useState('');
   const [flash, setFlash] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const cart = useCartStore();
   const eventsQuery = useQuery({ queryKey: ['events', organization.id], queryFn: () => listEvents(organization.id) });
@@ -41,6 +43,7 @@ export function SellScreen() {
   const currencySymbol = settingsQuery.data?.currencySymbol || 'S$';
   const floorWarnings = cart.lines
     .map((line) => {
+      if (line.kind !== 'inventory') return null;
       if (!line.item.floorPrice || subtotal <= 0) return null;
       const effectiveUnitPrice = (line.item.askingPrice * (total / subtotal));
       if (effectiveUnitPrice >= line.item.floorPrice) return null;
@@ -88,7 +91,10 @@ export function SellScreen() {
       if (!cart.lines.length) throw new Error('Cart is empty');
       const payload = {
         orgId: organization.id,
-        cart: cart.lines.map((line) => ({ inventoryItemId: line.item.id, quantity: line.quantity })),
+        cart: cart.lines.map((line) => line.kind === 'inventory'
+          ? { kind: 'inventory' as const, inventoryItemId: line.item.id, quantity: line.quantity }
+          : { kind: 'misc' as const, name: line.name, quantity: line.quantity, unitPrice: line.unitPrice }
+        ),
         discount,
         paymentMethod: cart.paymentMethod,
         eventId: cart.saleMode === 'show' ? selectedEvent?.id || null : null,
@@ -230,6 +236,45 @@ export function SellScreen() {
           </Field>
           {hasSaleContext && <ManualResults items={inventory} query={manual} onAdd={addScannedItem} currencySymbol={currencySymbol} />}
         </form>
+        <form
+          className="grid gap-3 rounded-lg border border-line bg-white p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!hasSaleContext) return;
+            const amount = Number(miscAmount);
+            if (!Number.isFinite(amount) || amount <= 0) {
+              showFeedback(setFlash, 'error', 'Enter a misc amount');
+              return;
+            }
+            cart.addMiscLine(miscName || 'Others', amount, 1);
+            setMiscName('Others');
+            setMiscAmount('');
+            showFeedback(setFlash, 'ok', `Added misc ${formatMoney(amount, currencySymbol)}`);
+          }}
+        >
+          <div>
+            <p className="text-sm font-bold text-slate-700">Misc sale</p>
+            <p className="mt-1 text-xs text-slate-500">For bulk commons or small items that are not logged in inventory.</p>
+          </div>
+          <div className="grid gap-2 min-[420px]:grid-cols-[minmax(0,1fr)_9rem_auto]">
+            <TextInput
+              value={miscName}
+              onChange={(event) => setMiscName(event.target.value)}
+              placeholder="Others"
+              disabled={!hasSaleContext}
+            />
+            <TextInput
+              type="number"
+              min={0}
+              step="0.01"
+              value={miscAmount}
+              onChange={(event) => setMiscAmount(event.target.value)}
+              placeholder="Amount"
+              disabled={!hasSaleContext}
+            />
+            <Button className="min-w-24" disabled={!hasSaleContext || !miscAmount}>Add</Button>
+          </div>
+        </form>
       </section>
 
       <aside className="grid content-start gap-3">
@@ -240,32 +285,42 @@ export function SellScreen() {
           </div>
           <div className="mt-3 grid gap-2">
             {cart.lines.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-600">Cart is empty.</p>}
-            {cart.lines.map((line) => (
-              <div key={line.item.id} className="min-w-0 rounded-md border border-line p-3">
+            {cart.lines.map((line) => {
+              const lineId = lineIdFor(line);
+              const unitPrice = lineUnitPrice(line);
+              return (
+              <div key={lineId} className="min-w-0 rounded-md border border-line p-3">
                 <div className="flex min-w-0 justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="break-words font-bold">{line.item.itemName}</p>
-                    <p className="break-all text-xs text-slate-600">{line.item.itemNumber}</p>
-                    <p className="break-words text-xs text-slate-600">{line.item.rarity} / {line.item.art} / {line.item.category} / {line.item.condition}</p>
-                    <p className="text-sm font-semibold">{formatMoney(line.item.askingPrice, currencySymbol)}</p>
-                    {line.item.floorPrice ? <p className="text-xs font-semibold text-slate-500">Floor {formatMoney(line.item.floorPrice, currencySymbol)}</p> : null}
+                    <p className="break-words font-bold">{line.kind === 'inventory' ? line.item.itemName : line.name}</p>
+                    {line.kind === 'inventory' ? (
+                      <>
+                        <p className="break-all text-xs text-slate-600">{line.item.itemNumber}</p>
+                        <p className="break-words text-xs text-slate-600">{line.item.rarity} / {line.item.art} / {line.item.category} / {line.item.condition}</p>
+                        {line.item.floorPrice ? <p className="text-xs font-semibold text-slate-500">Floor {formatMoney(line.item.floorPrice, currencySymbol)}</p> : null}
+                      </>
+                    ) : (
+                      <p className="break-words text-xs font-semibold text-slate-600">Misc / not tracked in inventory</p>
+                    )}
+                    <p className="text-sm font-semibold">{formatMoney(unitPrice, currencySymbol)}</p>
                   </div>
-                  <button className="grid min-h-11 min-w-11 place-items-center text-danger" onClick={() => cart.removeItem(line.item.id)} aria-label="Remove">
+                  <button className="grid min-h-11 min-w-11 place-items-center text-danger" onClick={() => cart.removeItem(lineId)} aria-label="Remove">
                     <Trash2 size={18} />
                   </button>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <button className="grid min-h-11 min-w-11 place-items-center rounded-md border border-line" onClick={() => cart.setQuantity(line.item.id, line.quantity - 1)} aria-label="Decrease">
+                  <button className="grid min-h-11 min-w-11 place-items-center rounded-md border border-line" onClick={() => cart.setQuantity(lineId, line.quantity - 1)} aria-label="Decrease">
                     <Minus size={16} />
                   </button>
                   <span className="text-lg font-black">{line.quantity}</span>
-                  <button className="grid min-h-11 min-w-11 place-items-center rounded-md border border-line" onClick={() => cart.setQuantity(line.item.id, line.quantity + 1)} aria-label="Increase">
+                  <button className="grid min-h-11 min-w-11 place-items-center rounded-md border border-line" onClick={() => cart.setQuantity(lineId, line.quantity + 1)} aria-label="Increase">
                     <Plus size={16} />
                   </button>
-                  <span className="ml-auto font-black">{formatMoney(line.item.askingPrice * line.quantity, currencySymbol)}</span>
+                  <span className="ml-auto font-black">{formatMoney(unitPrice * line.quantity, currencySymbol)}</span>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

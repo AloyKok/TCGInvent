@@ -399,12 +399,13 @@ function buildPerformanceRows(rows: Transaction[], eventsById: ReadonlyMap<strin
 function buildTopSellers(rows: Transaction[]) {
   const map = new Map<string, { id: string; name: string; units: number; revenue: number; profit: number; costUnknown: boolean }>();
   rows.forEach((tx) => tx.lineItems.forEach((line) => {
-    const current = map.get(line.inventoryItemId) || { id: line.inventoryItemId, name: line.itemNameSnapshot, units: 0, revenue: 0, profit: 0, costUnknown: false };
+    const id = line.inventoryItemId || `misc:${line.itemNameSnapshot}`;
+    const current = map.get(id) || { id, name: line.itemNameSnapshot, units: 0, revenue: 0, profit: 0, costUnknown: false };
     current.units += line.quantity;
     current.revenue += line.lineTotal;
     current.profit += line.costUnknown ? 0 : line.lineProfit;
     current.costUnknown = current.costUnknown || Boolean(line.costUnknown || tx.costUnknown);
-    map.set(line.inventoryItemId, current);
+    map.set(id, current);
   }));
   return [...map.values()].sort((a, b) => b.profit - a.profit).slice(0, 8);
 }

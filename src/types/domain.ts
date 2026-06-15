@@ -62,9 +62,9 @@ export interface InventoryItem {
 }
 
 export interface SaleLineItem {
-  inventoryItemId: string;
+  inventoryItemId?: string | null;
   itemNameSnapshot: string;
-  itemTypeSnapshot: InventoryItemType;
+  itemTypeSnapshot: InventoryItemType | 'misc';
   productCategorySnapshot?: SealedProductType | null;
   itemNumberSnapshot: string;
   raritySnapshot?: CardRarity | null;
@@ -121,15 +121,30 @@ export interface Settings {
   agingThresholdDays: number;
 }
 
-export interface CartLine {
+export interface InventoryCartLine {
+  kind: 'inventory';
   item: InventoryItem;
   quantity: number;
 }
 
+export interface MiscCartLine {
+  kind: 'misc';
+  id: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export type CartLine = InventoryCartLine | MiscCartLine;
+
+export type QueuedSaleCartLine =
+  | { kind?: 'inventory'; inventoryItemId: string; quantity: number }
+  | { kind: 'misc'; name: string; quantity: number; unitPrice: number };
+
 export interface QueuedSale {
   id: string;
   orgId: string;
-  cart: Array<{ inventoryItemId: string; quantity: number }>;
+  cart: QueuedSaleCartLine[];
   discount: number;
   paymentMethod: PaymentMethod;
   eventId?: string | null;

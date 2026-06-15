@@ -283,17 +283,18 @@ export function completeLocalSale(payload: Omit<QueuedSale, 'id' | 'createdAt' |
   if (existing) return existing;
   if (!payload.cart.length) throw new Error('Cart is empty');
 
-  const requested = payload.cart.map((line) => {
+  const requested = payload.cart.flatMap((line) => {
+    if (line.kind === 'misc') return [];
     const item = db.inventory.find((candidate) => candidate.id === line.inventoryItemId);
     if (!item) throw new Error(`Inventory item ${line.inventoryItemId} not found`);
     const quantity = Math.max(1, Number(line.quantity) || 1);
     if (item.status === 'reserved' || item.quantity < quantity) {
       throw new Error(`Insufficient stock for ${item.itemName} (${item.itemNumber})`);
     }
-    return { item, quantity };
+    return [{ item, quantity }];
   });
 
-  const lineItems = requested.map(({ item, quantity }) => {
+  const inventoryLineItems = requested.map(({ item, quantity }) => {
     const unitCost = item.costBasis || 0;
     const lineTotal = item.askingPrice * quantity;
     return {
@@ -314,6 +315,30 @@ export function completeLocalSale(payload: Omit<QueuedSale, 'id' | 'createdAt' |
       costUnknown: item.costBasis == null
     };
   });
+  const miscLineItems = payload.cart
+    .filter((line) => line.kind === 'misc')
+    .map((line) => {
+      const quantity = Math.max(1, Number(line.quantity) || 1);
+      const unitPrice = Math.max(0, Number(line.unitPrice) || 0);
+      return {
+        inventoryItemId: null,
+        itemNameSnapshot: line.name?.trim() || 'Others',
+        itemTypeSnapshot: 'misc' as const,
+        productCategorySnapshot: null,
+        itemNumberSnapshot: 'MISC',
+        raritySnapshot: null,
+        artSnapshot: null,
+        categorySnapshot: null,
+        conditionSnapshot: 'N/A',
+        quantity,
+        unitPrice,
+        unitCost: 0,
+        lineTotal: unitPrice * quantity,
+        lineProfit: 0,
+        costUnknown: true
+      };
+    });
+  const lineItems = [...inventoryLineItems, ...miscLineItems];
   const subtotal = lineItems.reduce((sum, line) => sum + line.lineTotal, 0);
   const discount = Math.min(Math.max(0, payload.discount), subtotal);
   const costTotal = lineItems.reduce((sum, line) => sum + line.unitCost * line.quantity, 0);
@@ -361,6 +386,7 @@ export function voidLocalSale(transactionId: string) {
   if (transaction.status === 'voided') return transaction;
 
   for (const line of transaction.lineItems) {
+    if (!line.inventoryItemId) continue;
     const item = db.inventory.find((candidate) => candidate.id === line.inventoryItemId);
     if (!item) continue;
     item.quantity += line.quantity;

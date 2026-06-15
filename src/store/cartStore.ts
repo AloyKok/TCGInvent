@@ -10,8 +10,9 @@ interface CartState {
   paymentMethod: PaymentMethod;
   notes: string;
   addItem: (item: InventoryItem, quantity?: number) => void;
-  setQuantity: (itemId: string, quantity: number) => void;
-  removeItem: (itemId: string) => void;
+  addMiscLine: (name: string, unitPrice: number, quantity?: number) => void;
+  setQuantity: (lineId: string, quantity: number) => void;
+  removeItem: (lineId: string) => void;
   setSaleMode: (saleMode: SaleMode | '') => void;
   setEventId: (eventId: string) => void;
   setFinalTotal: (total: number | null) => void;
@@ -29,11 +30,11 @@ export const useCartStore = create<CartState>((set) => ({
   notes: '',
   addItem: (item, quantity = 1) =>
     set((state) => {
-      const existing = state.lines.find((line) => line.item.id === item.id);
+      const existing = state.lines.find((line) => line.kind === 'inventory' && line.item.id === item.id);
       if (existing) {
         return {
           lines: state.lines.map((line) =>
-            line.item.id === item.id
+            line.kind === 'inventory' && line.item.id === item.id
               ? { ...line, quantity: Math.min(item.quantity, line.quantity + quantity) }
               : line
           ),
@@ -41,21 +42,39 @@ export const useCartStore = create<CartState>((set) => ({
         };
       }
       return {
-        lines: [{ item, quantity: Math.min(item.quantity, quantity) }, ...state.lines],
+        lines: [{ kind: 'inventory', item, quantity: Math.min(item.quantity, quantity) }, ...state.lines],
         finalTotal: null
       };
     }),
-  setQuantity: (itemId, quantity) =>
+  addMiscLine: (name, unitPrice, quantity = 1) =>
+    set((state) => ({
+      lines: [{
+        kind: 'misc',
+        id: crypto.randomUUID(),
+        name: name.trim() || 'Others',
+        unitPrice: Math.max(0, Number(unitPrice) || 0),
+        quantity: Math.max(1, Number(quantity) || 1)
+      }, ...state.lines],
+      finalTotal: null
+    })),
+  setQuantity: (lineId, quantity) =>
     set((state) => ({
       lines: state.lines
         .map((line) =>
-          line.item.id === itemId ? { ...line, quantity: Math.max(1, Math.min(line.item.quantity, quantity)) } : line
+          lineIdFor(line) === lineId
+            ? {
+                ...line,
+                quantity: line.kind === 'inventory'
+                  ? Math.max(1, Math.min(line.item.quantity, quantity))
+                  : Math.max(1, Number(quantity) || 1)
+              }
+            : line
         )
         .filter((line) => line.quantity > 0),
       finalTotal: null
     })),
-  removeItem: (itemId) => set((state) => ({
-    lines: state.lines.filter((line) => line.item.id !== itemId),
+  removeItem: (lineId) => set((state) => ({
+    lines: state.lines.filter((line) => lineIdFor(line) !== lineId),
     finalTotal: null
   })),
   setSaleMode: (saleMode) => set({ saleMode }),
@@ -67,5 +86,13 @@ export const useCartStore = create<CartState>((set) => ({
 }));
 
 export function getCartSubtotal(lines: CartLine[]) {
-  return lines.reduce((sum, line) => sum + line.item.askingPrice * line.quantity, 0);
+  return lines.reduce((sum, line) => sum + lineUnitPrice(line) * line.quantity, 0);
+}
+
+export function lineIdFor(line: CartLine) {
+  return line.kind === 'inventory' ? line.item.id : line.id;
+}
+
+export function lineUnitPrice(line: CartLine) {
+  return line.kind === 'inventory' ? line.item.askingPrice : line.unitPrice;
 }
