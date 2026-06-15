@@ -95,7 +95,7 @@ export function DashboardScreen() {
               onValueChange={(value) => setChannel(value as ChannelFilter)}
               options={[
                 { value: 'all', label: 'All' },
-                { value: 'walk-in', label: 'Walk-in (direct)' },
+                { value: 'walk-in', label: 'Online sales' },
                 { value: 'show', label: 'Card show' }
               ]}
             />
@@ -383,7 +383,7 @@ function buildPerformanceRows(rows: Transaction[], eventsById: ReadonlyMap<strin
   const map = new Map<string, { id: string; name: string; count: number; revenue: number; profit: number; costUnknown: boolean }>();
   rows.forEach((tx) => {
     const id = tx.eventId || 'walk-in';
-    const name = tx.eventId ? eventsById.get(tx.eventId)?.name || 'Unknown show' : 'Walk-in';
+    const name = tx.eventId ? eventsById.get(tx.eventId)?.name || 'Unknown show' : 'Online sales';
     const current = map.get(id) || { id, name, count: 0, revenue: 0, profit: 0, costUnknown: false };
     current.count += 1;
     current.revenue += tx.total;
@@ -445,7 +445,7 @@ function lastDayOfMonth(month: string) {
 }
 
 function channelLabel(channel: ChannelFilter) {
-  if (channel === 'walk-in') return 'Walk-in (direct)';
+  if (channel === 'walk-in') return 'Online sales';
   if (channel === 'show') return 'Card show';
   return 'All channels';
 }
