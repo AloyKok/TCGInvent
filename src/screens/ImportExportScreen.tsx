@@ -68,6 +68,7 @@ export function ImportExportScreen() {
   });
   const inventoryCsv = useMemo(() => Papa.unparse((inventoryQuery.data || []).map((item) => ({
     item_number: item.itemNumber,
+    qr_value: item.id,
     item_type: item.itemType,
     product_category: item.productCategory || '',
     item_name: item.itemName,
