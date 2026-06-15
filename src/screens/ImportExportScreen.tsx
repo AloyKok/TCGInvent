@@ -47,10 +47,17 @@ export function ImportExportScreen() {
             condition: row.condition || (row.item_type === 'sealed_product' ? 'SEALED' : row.item_type === 'mystery_pack' ? 'NEW' : 'NM'),
             gradeCompany: row.grade_company || null,
             grade: row.grade || null,
+            certNumber: row.cert_number || null,
             quantity: Number(row.quantity || 1),
             costBasis: row.cost_basis ? Number(row.cost_basis) : null,
+            floorPrice: row.floor_price ? Number(row.floor_price) : null,
             askingPrice: Number(row.asking_price || 0),
             marketPrice: row.market_price ? Number(row.market_price) : null,
+            location: row.location || null,
+            acquisitionSource: row.acquisition_source || null,
+            acquisitionDate: row.acquisition_date || null,
+            listedOnline: row.listed_online === 'true' || row.listed_online === '1',
+            tags: row.tags ? row.tags.split('|').map((tag) => tag.trim()).filter(Boolean) : [],
             imageUrl: row.image_url || null,
             notes: row.notes || null,
             status: 'in_stock'
@@ -83,10 +90,17 @@ export function ImportExportScreen() {
     condition: item.condition,
     grade_company: item.gradeCompany || '',
     grade: item.grade || '',
+    cert_number: item.certNumber || '',
     quantity: item.quantity,
     cost_basis: item.costBasis || '',
+    floor_price: item.floorPrice || '',
     asking_price: item.askingPrice,
     market_price: item.marketPrice || '',
+    location: item.location || '',
+    acquisition_source: item.acquisitionSource || '',
+    acquisition_date: item.acquisitionDate || '',
+    listed_online: item.listedOnline ? 'true' : 'false',
+    tags: item.tags.join('|'),
     image_url: item.imageUrl || '',
     notes: item.notes || ''
   }))), [inventoryQuery.data]);
@@ -102,6 +116,9 @@ export function ImportExportScreen() {
       status: tx.status,
       payment_method: tx.paymentMethod,
       total: tx.total,
+      transaction_cost_total: tx.costTotal,
+      transaction_gross_profit: tx.costUnknown ? '' : tx.grossProfit,
+      cost_unknown: tx.costUnknown ? 'true' : 'false',
       item_name: line.itemNameSnapshot,
       item_type: line.itemTypeSnapshot,
       product_category: line.productCategorySnapshot || '',
@@ -111,7 +128,9 @@ export function ImportExportScreen() {
       category: line.categorySnapshot || '',
       quantity: line.quantity,
       unit_price: line.unitPrice,
+      unit_cost: line.costUnknown ? '' : line.unitCost,
       line_total: line.lineTotal,
+      line_profit: line.costUnknown ? '' : line.lineProfit,
       created_by: tx.createdBy
     }))
     ));
@@ -122,7 +141,7 @@ export function ImportExportScreen() {
       <h2 className="text-2xl font-black">Import / Export</h2>
       <section className="grid gap-3 rounded-lg border border-line bg-white p-3">
         <h3 className="font-black">CSV import</h3>
-        <p className="break-words text-sm text-slate-600">Columns: item_number, item_type, product_category, item_name, card_number, set_name, rarity, art, language, category, condition, grade_company, grade, quantity, cost_basis, asking_price, market_price, image_url, notes. Item types: single_card, sealed_product, mystery_pack. Leave item_number blank to auto-generate it.</p>
+        <p className="break-words text-sm text-slate-600">Columns: item_number, item_type, product_category, item_name, card_number, set_name, rarity, art, language, category, condition, grade_company, grade, cert_number, quantity, cost_basis, floor_price, asking_price, market_price, location, acquisition_source, acquisition_date, listed_online, tags, image_url, notes. Use | between tags. Leave item_number blank to auto-generate it.</p>
         <Field label="Inventory CSV">
           <TextArea value={csv} onChange={(event) => setCsv(event.target.value)} />
         </Field>

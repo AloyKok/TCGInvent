@@ -1,6 +1,6 @@
 export type MemberRole = 'owner' | 'admin';
 export type CardLanguage = 'EN' | 'JP' | 'OTHER';
-export type CardRarity = 'C' | 'UC' | 'R' | 'SR' | 'SEC' | 'L' | 'P' | 'TR' | 'SP';
+export type CardRarity = 'C' | 'UC' | 'R' | 'SR' | 'SEC' | 'Leader' | 'Promo';
 export type CardArt = 'Base' | 'Parallel' | 'Manga';
 export type CardCategory = 'Character' | 'Leader' | 'Event' | 'Stage' | 'DON';
 export type InventoryItemType = 'single_card' | 'sealed_product' | 'mystery_pack';
@@ -41,11 +41,18 @@ export interface InventoryItem {
   condition: string;
   gradeCompany?: string | null;
   grade?: string | null;
+  certNumber?: string | null;
   quantity: number;
   costBasis?: number | null;
+  floorPrice?: number | null;
   askingPrice: number;
   marketPrice?: number | null;
   marketPriceUpdatedAt?: string | null;
+  location?: string | null;
+  acquisitionSource?: string | null;
+  acquisitionDate?: string | null;
+  listedOnline: boolean;
+  tags: string[];
   imageUrl?: string | null;
   notes?: string | null;
   status: InventoryStatus;
@@ -66,7 +73,10 @@ export interface SaleLineItem {
   conditionSnapshot: string;
   quantity: number;
   unitPrice: number;
+  unitCost: number;
   lineTotal: number;
+  lineProfit: number;
+  costUnknown?: boolean;
 }
 
 export interface Transaction {
@@ -79,6 +89,9 @@ export interface Transaction {
   subtotal: number;
   discount: number;
   total: number;
+  costTotal: number;
+  grossProfit: number;
+  costUnknown: boolean;
   paymentMethod: PaymentMethod;
   status: TransactionStatus;
   notes?: string | null;
@@ -99,11 +112,13 @@ export interface ShowEvent {
 export interface Settings {
   orgId: string;
   currency: string;
+  currencySymbol: string;
   defaultCondition: string;
   defaultLanguage: CardLanguage;
   activeEventId?: string | null;
   pricingApiKey?: string | null;
   labelSheetPreset: string;
+  agingThresholdDays: number;
 }
 
 export interface CartLine {

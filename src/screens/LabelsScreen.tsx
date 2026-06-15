@@ -12,7 +12,7 @@ export function LabelsScreen() {
   const [search, setSearch] = useState('');
   const settingsQuery = useQuery({ queryKey: ['settings', organization.id], queryFn: () => getSettings(organization.id) });
   const inventoryQuery = useQuery({ queryKey: ['inventory', organization.id, 'labels'], queryFn: () => listInventory(organization.id) });
-  const currency = settingsQuery.data?.currency || 'USD';
+  const currencySymbol = settingsQuery.data?.currencySymbol || 'S$';
   const items = (inventoryQuery.data || []).filter((item) =>
     [item.itemName, item.itemNumber, item.cardNumber, item.productCategory].filter(Boolean).join(' ').toLowerCase().includes(search.toLowerCase())
   );
@@ -32,7 +32,7 @@ export function LabelsScreen() {
         </Field>
       </div>
       <div className="label-sheet grid gap-2 sm:grid-cols-2 md:grid-cols-3 print:grid-cols-3 print:gap-0">
-        {items.map((item) => <LabelCard key={item.id} item={item} currency={currency} />)}
+        {items.map((item) => <LabelCard key={item.id} item={item} currencySymbol={currencySymbol} />)}
       </div>
     </div>
   );

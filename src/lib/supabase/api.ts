@@ -60,10 +60,17 @@ export interface InventoryInput {
   condition: string;
   gradeCompany?: string | null;
   grade?: string | null;
+  certNumber?: string | null;
   quantity: number;
   costBasis?: number | null;
+  floorPrice?: number | null;
   askingPrice: number;
   marketPrice?: number | null;
+  location?: string | null;
+  acquisitionSource?: string | null;
+  acquisitionDate?: string | null;
+  listedOnline?: boolean;
+  tags?: string[] | null;
   imageUrl?: string | null;
   notes?: string | null;
   status?: InventoryItem['status'];
@@ -195,10 +202,17 @@ export async function saveInventoryItem(orgId: string, userId: string, input: In
         condition: clean.condition,
         grade_company: clean.gradeCompany,
         grade: clean.grade,
+        cert_number: clean.certNumber,
         quantity: clean.quantity,
         cost_basis: clean.costBasis,
+        floor_price: clean.floorPrice,
         asking_price: clean.askingPrice,
         market_price: clean.marketPrice,
+        location: clean.location,
+        acquisition_source: clean.acquisitionSource,
+        acquisition_date: clean.acquisitionDate,
+        listed_online: clean.listedOnline,
+        tags: clean.tags,
         image_url: clean.imageUrl,
         notes: clean.notes,
         status: clean.status
@@ -220,7 +234,13 @@ export async function saveInventoryItem(orgId: string, userId: string, input: In
         status: existing.quantity + clean.quantity > 0 ? 'in_stock' : clean.status,
         asking_price: clean.askingPrice,
         cost_basis: clean.costBasis,
+        floor_price: clean.floorPrice,
         market_price: clean.marketPrice,
+        location: clean.location,
+        acquisition_source: clean.acquisitionSource,
+        acquisition_date: clean.acquisitionDate,
+        listed_online: clean.listedOnline,
+        tags: clean.tags,
         notes: clean.notes || existing.notes
       })
       .eq('id', existing.id)
@@ -252,10 +272,17 @@ export async function saveInventoryItem(orgId: string, userId: string, input: In
       condition: clean.condition,
       grade_company: clean.gradeCompany,
       grade: clean.grade,
+      cert_number: clean.certNumber,
       quantity: clean.quantity,
       cost_basis: clean.costBasis,
+      floor_price: clean.floorPrice,
       asking_price: clean.askingPrice,
       market_price: clean.marketPrice,
+      location: clean.location,
+      acquisition_source: clean.acquisitionSource,
+      acquisition_date: clean.acquisitionDate,
+      listed_online: clean.listedOnline,
+      tags: clean.tags,
       image_url: clean.imageUrl,
       notes: clean.notes,
       status: clean.status,
@@ -375,11 +402,13 @@ export async function updateSettings(orgId: string, settings: Partial<Settings>)
     .from('settings')
     .update({
       currency: settings.currency,
+      currency_symbol: settings.currencySymbol,
       default_condition: settings.defaultCondition,
       default_language: settings.defaultLanguage,
       active_event_id: settings.activeEventId || null,
       pricing_api_key: settings.pricingApiKey || null,
-      label_sheet_preset: settings.labelSheetPreset
+      label_sheet_preset: settings.labelSheetPreset,
+      aging_threshold_days: settings.agingThresholdDays
     })
     .eq('org_id', orgId)
     .select('*')
@@ -426,6 +455,7 @@ async function findExactInventoryLine(orgId: string, input: InventoryInput) {
   query = input.category ? query.eq('category', input.category) : query.is('category', null);
   query = input.gradeCompany ? query.eq('grade_company', input.gradeCompany) : query.is('grade_company', null);
   query = input.grade ? query.eq('grade', input.grade) : query.is('grade', null);
+  query = input.certNumber ? query.eq('cert_number', input.certNumber) : query.is('cert_number', null);
 
   const { data, error } = await query.limit(1).maybeSingle();
   if (error) throw error;
@@ -454,10 +484,17 @@ function normalizeInventoryInput(input: InventoryInput) {
     condition: input.condition.trim() || (isSealed ? 'SEALED' : input.itemType === 'mystery_pack' ? 'NEW' : 'NM'),
     gradeCompany: isCard && input.condition === 'GRADED' ? input.gradeCompany?.trim() || null : null,
     grade: isCard && input.condition === 'GRADED' ? input.grade?.trim() || null : null,
+    certNumber: isCard && input.condition === 'GRADED' ? input.certNumber?.trim() || null : null,
     quantity,
     costBasis: input.costBasis === undefined || input.costBasis === null ? null : Math.max(0, Number(input.costBasis)),
+    floorPrice: input.floorPrice === undefined || input.floorPrice === null ? null : Math.max(0, Number(input.floorPrice)),
     askingPrice: Math.max(0, Number(input.askingPrice) || 0),
     marketPrice: input.marketPrice === undefined || input.marketPrice === null ? null : Math.max(0, Number(input.marketPrice)),
+    location: input.location?.trim() || null,
+    acquisitionSource: input.acquisitionSource?.trim() || null,
+    acquisitionDate: input.acquisitionDate || null,
+    listedOnline: Boolean(input.listedOnline),
+    tags: (input.tags || []).map((tag) => tag.trim()).filter(Boolean),
     imageUrl: input.imageUrl?.trim() || null,
     notes: input.notes?.trim() || null,
     status: input.status || (quantity > 0 ? 'in_stock' : 'sold_out')

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CreditCard, Edit3, Package, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/Button';
 import { Field, SelectInput, TextArea, TextInput } from '../components/Field';
-import { deleteInventoryItem, generateInventoryItemNumber, listInventory, saveInventoryItem, type InventoryInput } from '../lib/supabase/api';
+import { deleteInventoryItem, generateInventoryItemNumber, getSettings, listInventory, saveInventoryItem, type InventoryInput } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 import { useAuth } from '../lib/supabase/AuthProvider';
+import { formatMoney } from '../lib/format/money';
 import type {
   CardArt,
   CardCategory,
@@ -33,7 +35,7 @@ const emptyFilters: InventoryFilters = {
   lowStockOnly: false
 };
 
-const rarityOptions = ['C', 'UC', 'R', 'SR', 'SEC', 'L', 'P', 'TR', 'SP'].map((value) => ({ value, label: value }));
+const rarityOptions = ['C', 'UC', 'R', 'SR', 'SEC', 'Leader', 'Promo'].map((value) => ({ value, label: value }));
 const artOptions = ['Base', 'Parallel', 'Manga'].map((value) => ({ value, label: value }));
 const categoryOptions = ['Character', 'Leader', 'Event', 'Stage', 'DON'].map((value) => ({ value, label: value }));
 const languageOptions = [
@@ -53,9 +55,11 @@ const itemTypeOptions = [
 export function InventoryScreen() {
   const { organization } = useOrg();
   const [filters, setFilters] = useState(emptyFilters);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const queryClient = useQueryClient();
+  const settingsQuery = useQuery({ queryKey: ['settings', organization.id], queryFn: () => getSettings(organization.id) });
   const query = useQuery({
     queryKey: ['inventory', organization.id, filters],
     queryFn: async () => {
@@ -69,7 +73,17 @@ export function InventoryScreen() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory', organization.id] })
   });
 
-  const items = useMemo(() => query.data || [], [query.data]);
+  const items = useMemo(() => {
+    let rows = query.data || [];
+    if (searchParams.get('aging')) {
+      const cutoff = Date.now() - (settingsQuery.data?.agingThresholdDays || 60) * 86400000;
+      rows = rows.filter((item) => item.quantity > 0 && new Date(item.createdAt).getTime() <= cutoff);
+    }
+    if (searchParams.get('belowMarket')) {
+      rows = rows.filter((item) => item.quantity > 0 && item.marketPrice != null && item.askingPrice < item.marketPrice);
+    }
+    return rows;
+  }, [query.data, searchParams, settingsQuery.data?.agingThresholdDays]);
   const filterOptions = useMemo(() => ({
     sets: [...new Set(items.map((item) => item.setName).filter((value): value is string => Boolean(value)))].sort(),
     conditions: [...new Set(items.map((item) => item.condition))].sort()
@@ -88,6 +102,15 @@ export function InventoryScreen() {
       </div>
 
       <div className="grid gap-3 rounded-lg border border-line bg-white p-3">
+        {(searchParams.get('aging') || searchParams.get('belowMarket')) && (
+          <button
+            type="button"
+            className="min-h-11 rounded-md bg-amber-50 px-3 text-left text-sm font-bold text-amber-900"
+            onClick={() => setSearchParams({})}
+          >
+            Showing dashboard attention items / tap to clear
+          </button>
+        )}
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-3 text-slate-400" size={18} />
           <TextInput className="w-full pl-10" placeholder="Search name, product type, set or item number" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
@@ -146,12 +169,12 @@ export function InventoryScreen() {
                   </p>
                 )}
                 <div className="mt-2 sm:hidden">
-                  <p className="text-lg font-black">${item.askingPrice.toFixed(2)}</p>
+                  <p className="text-lg font-black">{formatMoney(item.askingPrice, settingsQuery.data?.currencySymbol)}</p>
                   <p className={`text-xs font-bold ${item.status === 'in_stock' ? 'text-action' : 'text-warn'}`}>{item.status.replace('_', ' ')}</p>
                 </div>
               </div>
               <div className="hidden text-right sm:block">
-                <p className="text-lg font-black">${item.askingPrice.toFixed(2)}</p>
+                <p className="text-lg font-black">{formatMoney(item.askingPrice, settingsQuery.data?.currencySymbol)}</p>
                 <p className={`text-xs font-bold ${item.status === 'in_stock' ? 'text-action' : 'text-warn'}`}>{item.status.replace('_', ' ')}</p>
               </div>
             </div>
@@ -206,10 +229,17 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
     condition: item?.condition || 'NM',
     gradeCompany: item?.gradeCompany || '',
     grade: item?.grade || '',
+    certNumber: item?.certNumber || '',
     quantity: item?.quantity ?? 1,
     costBasis: item?.costBasis || null,
+    floorPrice: item?.floorPrice || null,
     askingPrice: item?.askingPrice ?? 0,
     marketPrice: item?.marketPrice || null,
+    location: item?.location || '',
+    acquisitionSource: item?.acquisitionSource || '',
+    acquisitionDate: item?.acquisitionDate || '',
+    listedOnline: item?.listedOnline || false,
+    tags: item?.tags || [],
     imageUrl: item?.imageUrl || '',
     notes: item?.notes || '',
     status: item?.status || 'in_stock'
@@ -343,6 +373,7 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
                   <div className="grid gap-3 min-[380px]:grid-cols-2">
                     <Field label="Grade company"><TextInput value={input.gradeCompany || ''} onChange={(e) => setInput({ ...input, gradeCompany: e.target.value })} /></Field>
                     <Field label="Grade"><TextInput value={input.grade || ''} onChange={(e) => setInput({ ...input, grade: e.target.value })} /></Field>
+                    <Field label="Cert number"><TextInput value={input.certNumber || ''} onChange={(e) => setInput({ ...input, certNumber: e.target.value })} /></Field>
                   </div>
                 )}
               </>
@@ -370,7 +401,36 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
         <div className="grid gap-3 min-[380px]:grid-cols-3">
           <Field label="Qty"><TextInput type="number" min={0} value={input.quantity} onChange={(e) => setInput({ ...input, quantity: Number(e.target.value) })} required /></Field>
           <Field label="Cost"><TextInput type="number" min={0} step="0.01" value={input.costBasis ?? ''} onChange={(e) => setInput({ ...input, costBasis: e.target.value ? Number(e.target.value) : null })} /></Field>
-          <Field label="Ask"><TextInput type="number" min={0} step="0.01" value={input.askingPrice} onChange={(e) => setInput({ ...input, askingPrice: Number(e.target.value) })} required /></Field>
+          <Field label="Asking price"><TextInput type="number" min={0} step="0.01" value={input.askingPrice} onChange={(e) => setInput({ ...input, askingPrice: Number(e.target.value) })} required /></Field>
+        </div>
+        <div className="grid gap-3 rounded-md border border-line bg-slate-50 p-3">
+          <p className="text-sm font-black">Optional sale controls</p>
+          <div className="grid gap-3 min-[380px]:grid-cols-2">
+            <Field label="Floor price"><TextInput type="number" min={0} step="0.01" value={input.floorPrice ?? ''} onChange={(e) => setInput({ ...input, floorPrice: e.target.value ? Number(e.target.value) : null })} /></Field>
+            <Field label="Location"><TextInput value={input.location || ''} onChange={(e) => setInput({ ...input, location: e.target.value })} placeholder="Binder A / page 4 / slot 2" /></Field>
+          </div>
+          <label className="flex min-h-11 items-center gap-3 text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={Boolean(input.listedOnline)}
+              onChange={(e) => setInput({ ...input, listedOnline: e.target.checked })}
+            />
+            Listed online
+          </label>
+        </div>
+        <div className="grid gap-3 rounded-md border border-line bg-slate-50 p-3">
+          <p className="text-sm font-black">Optional acquisition details</p>
+          <div className="grid gap-3 min-[380px]:grid-cols-2">
+            <Field label="Acquisition source"><TextInput value={input.acquisitionSource || ''} onChange={(e) => setInput({ ...input, acquisitionSource: e.target.value })} placeholder="Vendor, trade, collection" /></Field>
+            <Field label="Acquisition date"><TextInput type="date" value={input.acquisitionDate || ''} onChange={(e) => setInput({ ...input, acquisitionDate: e.target.value })} /></Field>
+          </div>
+          <Field label="Tags">
+            <TextInput
+              value={(input.tags || []).join(', ')}
+              onChange={(e) => setInput({ ...input, tags: e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })}
+              placeholder="hot, showcase, discount"
+            />
+          </Field>
         </div>
         <div className="rounded-md border border-line p-3">
           <label className="flex min-h-11 items-center gap-3 text-sm font-semibold">

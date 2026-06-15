@@ -9,9 +9,10 @@ import {
   qrFilename,
   sharePng
 } from '../lib/qr/exportQr';
+import { formatMoney } from '../lib/format/money';
 import type { InventoryItem } from '../types/domain';
 
-export function LabelCard({ item, currency }: { item: InventoryItem; currency: string }) {
+export function LabelCard({ item, currencySymbol }: { item: InventoryItem; currencySymbol: string }) {
   const [src, setSrc] = useState('');
   const [transparentBlob, setTransparentBlob] = useState<Blob | null>(null);
   const [whiteBlob, setWhiteBlob] = useState<Blob | null>(null);
@@ -106,7 +107,7 @@ export function LabelCard({ item, currency }: { item: InventoryItem; currency: s
             </>
           )}
           <p className="mt-1 text-sm font-black">
-            {new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(item.askingPrice)}
+            {formatMoney(item.askingPrice, currencySymbol)}
           </p>
         </div>
       </div>

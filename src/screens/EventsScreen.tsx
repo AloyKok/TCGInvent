@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, TextInput } from '../components/Field';
 import { formatEventPeriod, getLocalDateInputValue } from '../lib/events/dateRange';
-import { listEvents, listTransactions, saveEvent } from '../lib/supabase/api';
+import { formatMoney } from '../lib/format/money';
+import { getSettings, listEvents, listTransactions, saveEvent } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 
 export function EventsScreen() {
@@ -16,6 +17,7 @@ export function EventsScreen() {
   const [location, setLocation] = useState('');
   const query = useQuery({ queryKey: ['events', organization.id], queryFn: () => listEvents(organization.id) });
   const salesQuery = useQuery({ queryKey: ['history', organization.id], queryFn: () => listTransactions(organization.id, 5000) });
+  const settingsQuery = useQuery({ queryKey: ['settings', organization.id], queryFn: () => getSettings(organization.id) });
   const mutation = useMutation({
     mutationFn: () => saveEvent(organization.id, { name, startDate, endDate, location }),
     onSuccess: async () => {
@@ -57,7 +59,7 @@ export function EventsScreen() {
             <p className="font-black">{event.name}</p>
             <p className="text-sm text-slate-600">{formatEventPeriod(event)}{event.location ? ` / ${event.location}` : ''}</p>
             <p className="mt-2 text-sm font-semibold text-action">
-              {summarizeEvent(salesQuery.data || [], event.id)}
+              {summarizeEvent(salesQuery.data || [], event.id, settingsQuery.data?.currencySymbol || 'S$')}
             </p>
           </div>
         ))}
@@ -66,8 +68,8 @@ export function EventsScreen() {
   );
 }
 
-function summarizeEvent(transactions: Awaited<ReturnType<typeof listTransactions>>, eventId: string) {
+function summarizeEvent(transactions: Awaited<ReturnType<typeof listTransactions>>, eventId: string, symbol: string) {
   const rows = transactions.filter((tx) => tx.eventId === eventId && tx.status === 'completed');
   const total = rows.reduce((sum, tx) => sum + tx.total, 0);
-  return `${rows.length} sales / $${total.toFixed(2)}`;
+  return `${rows.length} sales / ${formatMoney(total, symbol)}`;
 }

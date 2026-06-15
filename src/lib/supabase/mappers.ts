@@ -40,11 +40,18 @@ export function mapInventoryItem(row: Tables['inventory_items']['Row']): Invento
     condition: row.condition,
     gradeCompany: row.grade_company,
     grade: row.grade,
+    certNumber: row.cert_number,
     quantity: row.quantity,
     costBasis: row.cost_basis,
+    floorPrice: row.floor_price,
     askingPrice: Number(row.asking_price),
     marketPrice: row.market_price === null ? null : Number(row.market_price),
     marketPriceUpdatedAt: row.market_price_updated_at,
+    location: row.location,
+    acquisitionSource: row.acquisition_source,
+    acquisitionDate: row.acquisition_date,
+    listedOnline: row.listed_online,
+    tags: row.tags || [],
     imageUrl: row.image_url,
     notes: row.notes,
     status: row.status,
@@ -65,6 +72,9 @@ export function mapTransaction(row: Tables['transactions']['Row']): Transaction 
     subtotal: Number(row.subtotal),
     discount: Number(row.discount),
     total: Number(row.total),
+    costTotal: Number(row.cost_total || 0),
+    grossProfit: Number(row.gross_profit || 0),
+    costUnknown: Boolean(row.cost_unknown),
     paymentMethod: row.payment_method,
     status: row.status,
     notes: row.notes,
@@ -78,11 +88,13 @@ export function mapSettings(row: Tables['settings']['Row']): Settings {
   return {
     orgId: row.org_id,
     currency: row.currency,
+    currencySymbol: row.currency_symbol || 'S$',
     defaultCondition: row.default_condition,
     defaultLanguage: row.default_language,
     activeEventId: row.active_event_id,
     pricingApiKey: row.pricing_api_key,
-    labelSheetPreset: row.label_sheet_preset
+    labelSheetPreset: row.label_sheet_preset,
+    agingThresholdDays: row.aging_threshold_days || 60
   };
 }
 

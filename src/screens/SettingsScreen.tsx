@@ -15,25 +15,29 @@ export function SettingsScreen() {
   const settingsQuery = useQuery({ queryKey: ['settings', organization.id], queryFn: () => getSettings(organization.id) });
   const eventsQuery = useQuery({ queryKey: ['events', organization.id], queryFn: () => listEvents(organization.id) });
   const [currency, setCurrency] = useState('USD');
+  const [currencySymbol, setCurrencySymbol] = useState('S$');
   const [defaultCondition, setDefaultCondition] = useState('NM');
   const [defaultLanguage, setDefaultLanguage] = useState<CardLanguage>('EN');
   const [activeEventId, setActiveEventId] = useState('');
   const [labelSheetPreset, setLabelSheetPreset] = useState('30-up-avery-5160');
+  const [agingThresholdDays, setAgingThresholdDays] = useState(60);
   const [pricingApiKey, setPricingApiKey] = useState('');
 
   useEffect(() => {
     const settings = settingsQuery.data;
     if (!settings) return;
     setCurrency(settings.currency);
+    setCurrencySymbol(settings.currencySymbol || 'S$');
     setDefaultCondition(settings.defaultCondition);
     setDefaultLanguage(settings.defaultLanguage);
     setActiveEventId(settings.activeEventId || '');
     setLabelSheetPreset(settings.labelSheetPreset);
+    setAgingThresholdDays(settings.agingThresholdDays || 60);
     setPricingApiKey(settings.pricingApiKey || '');
   }, [settingsQuery.data]);
 
   const mutation = useMutation({
-    mutationFn: () => updateSettings(organization.id, { currency, defaultCondition, defaultLanguage, activeEventId, labelSheetPreset, pricingApiKey }),
+    mutationFn: () => updateSettings(organization.id, { currency, currencySymbol, defaultCondition, defaultLanguage, activeEventId, labelSheetPreset, agingThresholdDays, pricingApiKey }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', organization.id] })
   });
 
@@ -44,7 +48,19 @@ export function SettingsScreen() {
       <form className="grid gap-3 rounded-lg border border-line bg-white p-3" onSubmit={(event) => { event.preventDefault(); mutation.mutate(); }}>
         <div className="grid gap-3 min-[400px]:grid-cols-2">
           <Field label="Currency"><TextInput value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} disabled={!isOwner} /></Field>
+          <Field label="Currency symbol"><TextInput value={currencySymbol} onChange={(event) => setCurrencySymbol(event.target.value)} disabled={!isOwner} placeholder="S$" /></Field>
+        </div>
+        <div className="grid gap-3 min-[400px]:grid-cols-2">
           <Field label="Default condition"><TextInput value={defaultCondition} onChange={(event) => setDefaultCondition(event.target.value)} disabled={!isOwner} /></Field>
+          <Field label="Aging threshold days">
+            <TextInput
+              type="number"
+              min={1}
+              value={agingThresholdDays}
+              onChange={(event) => setAgingThresholdDays(Math.max(1, Number(event.target.value) || 60))}
+              disabled={!isOwner}
+            />
+          </Field>
         </div>
         <div className="grid gap-3 min-[400px]:grid-cols-2">
           <Field label="Default language">

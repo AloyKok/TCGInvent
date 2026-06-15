@@ -6,8 +6,9 @@ import { Button } from '../components/Button';
 import { Field, SelectInput, TextArea, TextInput } from '../components/Field';
 import { QrScanner } from '../components/QrScanner';
 import { formatEventPeriod } from '../lib/events/dateRange';
+import { formatMoney } from '../lib/format/money';
 import { getCartSubtotal, useCartStore } from '../store/cartStore';
-import { completeSale, listEvents, listInventory } from '../lib/supabase/api';
+import { completeSale, getSettings, listEvents, listInventory } from '../lib/supabase/api';
 import { cacheInventory, getCachedInventory, queueSale, syncQueuedSales } from '../lib/queue/offlineQueue';
 import { useOrg } from '../lib/org/OrgProvider';
 import type { InventoryItem } from '../types/domain';
@@ -20,6 +21,7 @@ export function SellScreen() {
   const [flash, setFlash] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const cart = useCartStore();
   const eventsQuery = useQuery({ queryKey: ['events', organization.id], queryFn: () => listEvents(organization.id) });
+  const settingsQuery = useQuery({ queryKey: ['settings', organization.id], queryFn: () => getSettings(organization.id) });
   const inventoryQuery = useQuery({
     queryKey: ['inventory', organization.id, 'sell-cache'],
     queryFn: async () => {
@@ -36,6 +38,15 @@ export function SellScreen() {
   const subtotal = getCartSubtotal(cart.lines);
   const total = Math.min(subtotal, Math.max(0, cart.finalTotal ?? subtotal));
   const discount = Math.max(0, subtotal - total);
+  const currencySymbol = settingsQuery.data?.currencySymbol || 'S$';
+  const floorWarnings = cart.lines
+    .map((line) => {
+      if (!line.item.floorPrice || subtotal <= 0) return null;
+      const effectiveUnitPrice = (line.item.askingPrice * (total / subtotal));
+      if (effectiveUnitPrice >= line.item.floorPrice) return null;
+      return `${line.item.itemName} effective price ${formatMoney(effectiveUnitPrice, currencySymbol)} is below floor ${formatMoney(line.item.floorPrice, currencySymbol)}`;
+    })
+    .filter((warning): warning is string => Boolean(warning));
 
   useEffect(() => {
     syncQueuedSales().then(() => queryClient.invalidateQueries({ queryKey: ['history', organization.id] })).catch(() => undefined);
@@ -68,8 +79,8 @@ export function SellScreen() {
       return;
     }
     cart.addItem(item, 1);
-    showFeedback(setFlash, 'ok', `${item.itemName} $${item.askingPrice.toFixed(2)}`);
-  }, [cart, hasSaleContext, resolveItem]);
+    showFeedback(setFlash, 'ok', `${item.itemName} ${formatMoney(item.askingPrice, currencySymbol)}`);
+  }, [cart, currencySymbol, hasSaleContext, resolveItem]);
 
   const checkoutMutation = useMutation({
     mutationFn: async () => {
@@ -217,7 +228,7 @@ export function SellScreen() {
               </Button>
             </div>
           </Field>
-          {hasSaleContext && <ManualResults items={inventory} query={manual} onAdd={addScannedItem} />}
+          {hasSaleContext && <ManualResults items={inventory} query={manual} onAdd={addScannedItem} currencySymbol={currencySymbol} />}
         </form>
       </section>
 
@@ -236,7 +247,8 @@ export function SellScreen() {
                     <p className="break-words font-bold">{line.item.itemName}</p>
                     <p className="break-all text-xs text-slate-600">{line.item.itemNumber}</p>
                     <p className="break-words text-xs text-slate-600">{line.item.rarity} / {line.item.art} / {line.item.category} / {line.item.condition}</p>
-                    <p className="text-sm font-semibold">${line.item.askingPrice.toFixed(2)}</p>
+                    <p className="text-sm font-semibold">{formatMoney(line.item.askingPrice, currencySymbol)}</p>
+                    {line.item.floorPrice ? <p className="text-xs font-semibold text-slate-500">Floor {formatMoney(line.item.floorPrice, currencySymbol)}</p> : null}
                   </div>
                   <button className="grid min-h-11 min-w-11 place-items-center text-danger" onClick={() => cart.removeItem(line.item.id)} aria-label="Remove">
                     <Trash2 size={18} />
@@ -250,7 +262,7 @@ export function SellScreen() {
                   <button className="grid min-h-11 min-w-11 place-items-center rounded-md border border-line" onClick={() => cart.setQuantity(line.item.id, line.quantity + 1)} aria-label="Increase">
                     <Plus size={16} />
                   </button>
-                  <span className="ml-auto font-black">${(line.item.askingPrice * line.quantity).toFixed(2)}</span>
+                  <span className="ml-auto font-black">{formatMoney(line.item.askingPrice * line.quantity, currencySymbol)}</span>
                 </div>
               </div>
             ))}
@@ -263,7 +275,7 @@ export function SellScreen() {
               <p className="text-xs font-semibold uppercase text-slate-500">Sale tracking</p>
               <p className="mt-1 font-bold">{saleContextLabel}</p>
             </div>
-            <div className="flex justify-between text-sm"><span>Subtotal</span><strong>${subtotal.toFixed(2)}</strong></div>
+            <div className="flex justify-between text-sm"><span>Subtotal</span><strong>{formatMoney(subtotal, currencySymbol)}</strong></div>
             <Field label="Final total">
               <TextInput
                 type="number"
@@ -275,7 +287,12 @@ export function SellScreen() {
                 disabled={!cart.lines.length}
               />
             </Field>
-            {discount > 0 && <div className="flex justify-between text-sm text-action"><span>Price adjustment</span><strong>-${discount.toFixed(2)}</strong></div>}
+            {discount > 0 && <div className="flex justify-between text-sm text-action"><span>Price adjustment</span><strong>-{formatMoney(discount, currencySymbol)}</strong></div>}
+            {floorWarnings.length > 0 && (
+              <div className="grid gap-1 rounded-md bg-amber-50 p-3 text-xs font-semibold text-amber-900">
+                {floorWarnings.map((warning) => <p key={warning}>{warning}</p>)}
+              </div>
+            )}
             <Field label="Payment">
               <SelectInput
                 value={cart.paymentMethod}
@@ -292,7 +309,7 @@ export function SellScreen() {
             </Field>
             {checkoutMutation.error && <p className="text-sm text-danger">{checkoutMutation.error.message}</p>}
             <Button className="min-h-14 text-base" disabled={!hasSaleContext || !cart.lines.length || checkoutMutation.isPending} onClick={() => checkoutMutation.mutate()}>
-              {checkoutMutation.isPending ? 'Completing...' : `Complete $${total.toFixed(2)}`}
+              {checkoutMutation.isPending ? 'Completing...' : `Complete ${formatMoney(total, currencySymbol)}`}
             </Button>
           </div>
         </div>
@@ -310,7 +327,7 @@ export function SellScreen() {
   }
 }
 
-function ManualResults({ items, query, onAdd }: { items: InventoryItem[]; query: string; onAdd: (value: string) => void }) {
+function ManualResults({ items, query, onAdd, currencySymbol }: { items: InventoryItem[]; query: string; onAdd: (value: string) => void; currencySymbol: string }) {
   const results = useMemo(() => {
     const value = query.trim().toLowerCase();
     if (value.length < 2) return [];
@@ -326,7 +343,7 @@ function ManualResults({ items, query, onAdd }: { items: InventoryItem[]; query:
       {results.map((item) => (
         <button key={item.id} type="button" className="min-h-11 min-w-0 rounded-md bg-slate-50 px-3 py-2 text-left text-sm" onClick={() => onAdd(item.id)}>
           <strong className="break-words">{item.itemName}</strong>
-          <span className="block break-all text-xs text-slate-600">{item.itemNumber} / ${item.askingPrice.toFixed(2)}</span>
+          <span className="block break-all text-xs text-slate-600">{item.itemNumber} / {formatMoney(item.askingPrice, currencySymbol)}</span>
         </button>
       ))}
     </div>

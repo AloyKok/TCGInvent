@@ -54,22 +54,27 @@ export function getLocalDatabase(): LocalDatabase {
       });
       parsed.inventory = parsed.inventory.map((item) => {
         const legacyItem = item as InventoryItem & { cardName?: string };
-        if (legacyItem.itemType && legacyItem.itemName) return item;
+        if (legacyItem.itemType && legacyItem.itemName) {
+          migrated = addInventoryDefaults(legacyItem) || migrated;
+          return legacyItem;
+        }
         const rest = { ...legacyItem };
         delete rest.cardName;
         migrated = true;
-        return {
+        const next: InventoryItem = {
           ...rest,
-          itemType: 'single_card',
+          itemType: 'single_card' as const,
           productCategory: null,
           itemName: legacyItem.cardName || 'Unnamed item'
         };
+        addInventoryDefaults(next);
+        return next;
       });
       parsed.transactions = parsed.transactions.map((transaction) => ({
         ...transaction,
         lineItems: transaction.lineItems.map((line) => {
-          const legacyLine = line as typeof line & { cardNameSnapshot?: string };
-          if (legacyLine.itemNameSnapshot) return line;
+          const legacyLine = line as typeof line & { cardNameSnapshot?: string; unitCost?: number; lineProfit?: number; costUnknown?: boolean };
+          if (legacyLine.itemNameSnapshot && legacyLine.unitCost !== undefined && legacyLine.lineProfit !== undefined) return line;
           const rest = { ...legacyLine };
           delete rest.cardNameSnapshot;
           migrated = true;
@@ -77,10 +82,36 @@ export function getLocalDatabase(): LocalDatabase {
             ...rest,
             itemNameSnapshot: legacyLine.cardNameSnapshot || 'Unnamed item',
             itemTypeSnapshot: 'single_card' as const,
-            productCategorySnapshot: null
+            productCategorySnapshot: null,
+            unitCost: legacyLine.unitCost ?? 0,
+            lineProfit: legacyLine.lineProfit ?? 0,
+            costUnknown: legacyLine.costUnknown ?? true
           };
         })
       }));
+      parsed.transactions = parsed.transactions.map((transaction) => {
+        const legacyTransaction = transaction as Transaction & { costTotal?: number; grossProfit?: number; costUnknown?: boolean };
+        if (
+          legacyTransaction.costTotal !== undefined &&
+          legacyTransaction.grossProfit !== undefined &&
+          legacyTransaction.costUnknown !== undefined
+        ) return legacyTransaction;
+        migrated = true;
+        return {
+          ...legacyTransaction,
+          costTotal: legacyTransaction.costTotal ?? 0,
+          grossProfit: legacyTransaction.grossProfit ?? 0,
+          costUnknown: legacyTransaction.costUnknown ?? true
+        };
+      });
+      if (!parsed.settings.currencySymbol) {
+        parsed.settings.currencySymbol = 'S$';
+        migrated = true;
+      }
+      if (!parsed.settings.agingThresholdDays) {
+        parsed.settings.agingThresholdDays = 60;
+        migrated = true;
+      }
       if (migrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
       return parsed;
     } catch {
@@ -186,7 +217,13 @@ export function saveLocalInventoryItem(input: InventoryInput, itemId?: string) {
     existing.quantity += clean.quantity;
     existing.askingPrice = clean.askingPrice;
     existing.costBasis = clean.costBasis;
+    existing.floorPrice = clean.floorPrice;
     existing.marketPrice = clean.marketPrice;
+    existing.location = clean.location;
+    existing.acquisitionSource = clean.acquisitionSource;
+    existing.acquisitionDate = clean.acquisitionDate;
+    existing.listedOnline = clean.listedOnline;
+    existing.tags = clean.tags;
     existing.notes = clean.notes || existing.notes;
     existing.status = existing.quantity > 0 ? 'in_stock' : 'sold_out';
     existing.updatedAt = now;
@@ -210,11 +247,18 @@ export function saveLocalInventoryItem(input: InventoryInput, itemId?: string) {
     condition: clean.condition,
     gradeCompany: clean.gradeCompany,
     grade: clean.grade,
+    certNumber: clean.certNumber,
     quantity: clean.quantity,
     costBasis: clean.costBasis,
+    floorPrice: clean.floorPrice,
     askingPrice: clean.askingPrice,
     marketPrice: clean.marketPrice,
     marketPriceUpdatedAt: clean.marketPrice ? now : null,
+    location: clean.location,
+    acquisitionSource: clean.acquisitionSource,
+    acquisitionDate: clean.acquisitionDate,
+    listedOnline: clean.listedOnline,
+    tags: clean.tags,
     imageUrl: clean.imageUrl,
     notes: clean.notes,
     status: clean.status,
@@ -249,22 +293,32 @@ export function completeLocalSale(payload: Omit<QueuedSale, 'id' | 'createdAt' |
     return { item, quantity };
   });
 
-  const lineItems = requested.map(({ item, quantity }) => ({
-    inventoryItemId: item.id,
-    itemNameSnapshot: item.itemName,
-    itemTypeSnapshot: item.itemType,
-    productCategorySnapshot: item.productCategory,
-    itemNumberSnapshot: item.itemNumber,
-    raritySnapshot: item.rarity,
-    artSnapshot: item.art,
-    categorySnapshot: item.category,
-    conditionSnapshot: item.condition,
-    quantity,
-    unitPrice: item.askingPrice,
-    lineTotal: item.askingPrice * quantity
-  }));
+  const lineItems = requested.map(({ item, quantity }) => {
+    const unitCost = item.costBasis || 0;
+    const lineTotal = item.askingPrice * quantity;
+    return {
+      inventoryItemId: item.id,
+      itemNameSnapshot: item.itemName,
+      itemTypeSnapshot: item.itemType,
+      productCategorySnapshot: item.productCategory,
+      itemNumberSnapshot: item.itemNumber,
+      raritySnapshot: item.rarity,
+      artSnapshot: item.art,
+      categorySnapshot: item.category,
+      conditionSnapshot: item.condition,
+      quantity,
+      unitPrice: item.askingPrice,
+      unitCost,
+      lineTotal,
+      lineProfit: (item.askingPrice - unitCost) * quantity,
+      costUnknown: item.costBasis == null
+    };
+  });
   const subtotal = lineItems.reduce((sum, line) => sum + line.lineTotal, 0);
   const discount = Math.min(Math.max(0, payload.discount), subtotal);
+  const costTotal = lineItems.reduce((sum, line) => sum + line.unitCost * line.quantity, 0);
+  const total = subtotal - discount;
+  const costUnknown = lineItems.some((line) => line.costUnknown);
   const now = new Date().toISOString();
 
   requested.forEach(({ item, quantity }) => {
@@ -282,7 +336,10 @@ export function completeLocalSale(payload: Omit<QueuedSale, 'id' | 'createdAt' |
     lineItems,
     subtotal,
     discount,
-    total: subtotal - discount,
+    total,
+    costTotal,
+    grossProfit: total - costTotal,
+    costUnknown,
     paymentMethod: payload.paymentMethod,
     status: 'completed',
     notes: payload.notes || null,
@@ -397,10 +454,17 @@ function normalizeInput(input: InventoryInput) {
     condition: input.condition.trim() || (isSealed ? 'SEALED' : input.itemType === 'mystery_pack' ? 'NEW' : 'NM'),
     gradeCompany: isCard && input.condition === 'GRADED' ? input.gradeCompany?.trim() || null : null,
     grade: isCard && input.condition === 'GRADED' ? input.grade?.trim() || null : null,
+    certNumber: isCard && input.condition === 'GRADED' ? input.certNumber?.trim() || null : null,
     quantity,
     costBasis: input.costBasis == null ? null : Math.max(0, Number(input.costBasis)),
+    floorPrice: input.floorPrice == null ? null : Math.max(0, Number(input.floorPrice)),
     askingPrice: Math.max(0, Number(input.askingPrice) || 0),
     marketPrice: input.marketPrice == null ? null : Math.max(0, Number(input.marketPrice)),
+    location: input.location?.trim() || null,
+    acquisitionSource: input.acquisitionSource?.trim() || null,
+    acquisitionDate: input.acquisitionDate || null,
+    listedOnline: Boolean(input.listedOnline),
+    tags: (input.tags || []).map((tag) => tag.trim()).filter(Boolean),
     imageUrl: input.imageUrl?.trim() || null,
     notes: input.notes?.trim() || null,
     status: input.status || (quantity > 0 ? 'in_stock' as const : 'sold_out' as const)
@@ -434,7 +498,7 @@ function createSeedDatabase(): LocalDatabase {
   const now = new Date().toISOString();
   const organization: Organization = { id: LOCAL_ORG_ID, name: 'CardPulse Demo Booth', createdAt: now };
   const inventory: InventoryItem[] = [
-    seedItem('11111111-1111-4111-8111-111111111111', 'OP-OP05-060-NM-001', 'Monkey D. Luffy', 'OP05-060', '[OP-05] Awakening of the New Era', 'L', 'Parallel', 'EN', 'Leader', 'NM', 1, 45, 74.99, now),
+    seedItem('11111111-1111-4111-8111-111111111111', 'OP-OP05-060-NM-001', 'Monkey D. Luffy', 'OP05-060', '[OP-05] Awakening of the New Era', 'Leader', 'Parallel', 'EN', 'Leader', 'NM', 1, 45, 74.99, now),
     seedItem('22222222-2222-4222-8222-222222222222', 'OP-OP05-119-NM-001', 'Monkey D. Luffy', 'OP05-119', '[OP-05] Awakening of the New Era', 'SEC', 'Base', 'EN', 'Character', 'NM', 1, 55, 89.99, now),
     {
       ...seedItem('33333333-3333-4333-8333-333333333333', 'OP-OP02-013-GRADED-001', 'Portgas.D.Ace', 'OP02-013', '[OP-02] Paramount War', 'SR', 'Manga', 'JP', 'Character', 'GRADED', 1, 650, 999.99, now),
@@ -471,11 +535,13 @@ function createSeedDatabase(): LocalDatabase {
     settings: {
       orgId: LOCAL_ORG_ID,
       currency: 'USD',
+      currencySymbol: 'S$',
       defaultCondition: 'NM',
       defaultLanguage: 'EN',
       activeEventId: event.id,
       pricingApiKey: null,
-      labelSheetPreset: '30-up-avery-5160'
+      labelSheetPreset: '30-up-avery-5160',
+      agingThresholdDays: 60
     },
     invitations: []
   };
@@ -511,11 +577,18 @@ function seedItem(
     language,
     category,
     condition,
+    certNumber: null,
     quantity,
     costBasis,
+    floorPrice: null,
     askingPrice,
     marketPrice: null,
     marketPriceUpdatedAt: null,
+    location: null,
+    acquisitionSource: null,
+    acquisitionDate: null,
+    listedOnline: false,
+    tags: [],
     imageUrl: null,
     notes: 'Local demo seed item',
     status: quantity > 0 ? 'in_stock' : 'sold_out',
@@ -523,4 +596,46 @@ function seedItem(
     createdAt: now,
     updatedAt: now
   };
+}
+
+function addInventoryDefaults(item: InventoryItem) {
+  let changed = false;
+  if (item.certNumber === undefined) {
+    item.certNumber = null;
+    changed = true;
+  }
+  if (item.floorPrice === undefined) {
+    item.floorPrice = null;
+    changed = true;
+  }
+  if (item.location === undefined) {
+    item.location = null;
+    changed = true;
+  }
+  if (item.acquisitionSource === undefined) {
+    item.acquisitionSource = null;
+    changed = true;
+  }
+  if (item.acquisitionDate === undefined) {
+    item.acquisitionDate = null;
+    changed = true;
+  }
+  if (item.listedOnline === undefined) {
+    item.listedOnline = false;
+    changed = true;
+  }
+  if (!Array.isArray(item.tags)) {
+    item.tags = [];
+    changed = true;
+  }
+  const legacyRarity = item.rarity as string | null | undefined;
+  if (legacyRarity === 'L') {
+    item.rarity = 'Leader';
+    changed = true;
+  }
+  if (legacyRarity === 'P' || legacyRarity === 'TR' || legacyRarity === 'SP') {
+    item.rarity = 'Promo';
+    changed = true;
+  }
+  return changed;
 }
