@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
+import { inventoryItemTypeLabels, sealedProductTypeLabels } from '../lib/inventory/productTypes';
 import type { InventoryItem } from '../types/domain';
 
 export function LabelCard({ item, currency }: { item: InventoryItem; currency: string }) {
@@ -15,9 +16,18 @@ export function LabelCard({ item, currency }: { item: InventoryItem; currency: s
         {src ? <img src={src} alt={`QR ${item.itemNumber}`} className="h-16 w-16" /> : <div className="h-16 w-16 bg-slate-100" />}
         <div className="min-w-0 flex-1">
           <p className="break-all font-bold">{item.itemNumber}</p>
-          <p className="truncate font-semibold">{item.cardName}</p>
-          <p>{item.cardNumber} / {item.rarity} / {item.language}</p>
-          <p>{item.art} / {item.category} / {item.condition}</p>
+          <p className="truncate font-semibold">{item.itemName}</p>
+          {item.itemType === 'single_card' ? (
+            <>
+              <p>{item.cardNumber} / {item.rarity} / {item.language}</p>
+              <p>{item.art} / {item.category} / {item.condition}</p>
+            </>
+          ) : (
+            <>
+              <p>{inventoryItemTypeLabels[item.itemType]}</p>
+              <p>{item.productCategory ? `${sealedProductTypeLabels[item.productCategory]} / ` : ''}{item.language} / {item.condition}</p>
+            </>
+          )}
           <p className="mt-1 text-sm font-black">
             {new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(item.askingPrice)}
           </p>

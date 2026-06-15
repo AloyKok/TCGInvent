@@ -1,17 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Edit3, Plus, Search, Trash2, X } from 'lucide-react';
+import { CreditCard, Edit3, Package, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Field, SelectInput, TextArea, TextInput } from '../components/Field';
 import { deleteInventoryItem, generateInventoryItemNumber, listInventory, saveInventoryItem, type InventoryInput } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 import { useAuth } from '../lib/supabase/AuthProvider';
-import type { CardArt, CardCategory, CardLanguage, CardRarity, InventoryFilters, InventoryItem } from '../types/domain';
+import type {
+  CardArt,
+  CardCategory,
+  CardLanguage,
+  CardRarity,
+  InventoryFilters,
+  InventoryItem,
+  InventoryItemType,
+  SealedProductType
+} from '../types/domain';
 import { cacheInventory } from '../lib/queue/offlineQueue';
 import { ONE_PIECE_SET_NAMES } from '../lib/cards/onePieceMetadata';
+import { inventoryItemTypeLabels, sealedProductTypeLabels, sealedProductTypeOptions } from '../lib/inventory/productTypes';
 
 const emptyFilters: InventoryFilters = {
   search: '',
+  itemType: '',
   setName: '',
   rarity: '',
   art: '',
@@ -31,6 +42,13 @@ const languageOptions = [
   { value: 'OTHER', label: 'Other' }
 ];
 const conditionOptions = ['NM', 'LP', 'MP', 'HP', 'DMG', 'GRADED'].map((value) => ({ value, label: value }));
+const sealedConditionOptions = ['SEALED', 'OPENED', 'DAMAGED'].map((value) => ({ value, label: value }));
+const itemTypeOptions = [
+  { value: '', label: 'All item types' },
+  { value: 'single_card', label: 'Single cards' },
+  { value: 'sealed_product', label: 'Sealed products' },
+  { value: 'mystery_pack', label: 'Mystery packs' }
+];
 
 export function InventoryScreen() {
   const { organization } = useOrg();
@@ -53,7 +71,7 @@ export function InventoryScreen() {
 
   const items = useMemo(() => query.data || [], [query.data]);
   const filterOptions = useMemo(() => ({
-    sets: [...new Set(items.map((item) => item.setName))].sort(),
+    sets: [...new Set(items.map((item) => item.setName).filter((value): value is string => Boolean(value)))].sort(),
     conditions: [...new Set(items.map((item) => item.condition))].sort()
   }), [items]);
 
@@ -72,9 +90,10 @@ export function InventoryScreen() {
       <div className="grid gap-3 rounded-lg border border-line bg-white p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-3 text-slate-400" size={18} />
-          <TextInput className="w-full pl-10" placeholder="Search name, set, card or item number" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
+          <TextInput className="w-full pl-10" placeholder="Search name, product type, set or item number" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
         </div>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          <SelectInput value={filters.itemType} onValueChange={(value) => setFilters({ ...filters, itemType: value })} options={itemTypeOptions} />
           <SelectInput value={filters.setName} onValueChange={(value) => setFilters({ ...filters, setName: value })} options={[{ value: '', label: 'All sets' }, ...filterOptions.sets.map((value) => ({ value, label: value }))]} />
           <SelectInput value={filters.rarity} onValueChange={(value) => setFilters({ ...filters, rarity: value })} options={[{ value: '', label: 'All rarities' }, ...rarityOptions]} />
           <SelectInput value={filters.art} onValueChange={(value) => setFilters({ ...filters, art: value })} options={[{ value: '', label: 'All art' }, ...artOptions]} />
@@ -108,15 +127,24 @@ export function InventoryScreen() {
               {item.imageUrl && (
                 <img
                   src={item.imageUrl}
-                  alt={`${item.cardName} preview`}
+                  alt={`${item.itemName} preview`}
                   className="h-28 w-20 shrink-0 rounded-md border border-line bg-slate-50 object-contain sm:h-40 sm:w-28"
                 />
               )}
               <div className="min-w-0 flex-1">
-                <p className="break-words text-base font-black">{item.cardName}</p>
+                <p className="break-words text-base font-black">{item.itemName}</p>
                 <p className="break-all text-sm font-semibold text-slate-600">{item.itemNumber}</p>
-                <p className="break-words text-sm text-slate-600">{item.cardNumber} / {item.setName} / {item.language}</p>
-                <p className="break-words text-sm text-slate-600">{item.rarity} / {item.art} / {item.category} / {item.condition} / qty {item.quantity}</p>
+                <p className="break-words text-sm font-semibold text-action">{inventoryItemTypeLabels[item.itemType]}</p>
+                {item.itemType === 'single_card' ? (
+                  <>
+                    <p className="break-words text-sm text-slate-600">{item.cardNumber} / {item.setName} / {item.language}</p>
+                    <p className="break-words text-sm text-slate-600">{item.rarity} / {item.art} / {item.category} / {item.condition} / qty {item.quantity}</p>
+                  </>
+                ) : (
+                  <p className="break-words text-sm text-slate-600">
+                    {item.productCategory ? `${sealedProductTypeLabels[item.productCategory]} / ` : ''}{item.language} / {item.condition} / qty {item.quantity}
+                  </p>
+                )}
                 <div className="mt-2 sm:hidden">
                   <p className="text-lg font-black">${item.askingPrice.toFixed(2)}</p>
                   <p className={`text-xs font-bold ${item.status === 'in_stock' ? 'text-action' : 'text-warn'}`}>{item.status.replace('_', ' ')}</p>
@@ -135,7 +163,7 @@ export function InventoryScreen() {
                 variant="ghost"
                 className="flex items-center justify-center gap-2 text-danger"
                 onClick={() => {
-                  if (confirm(`Delete ${item.cardName} (${item.itemNumber})? Sales history snapshots stay intact.`)) deleteMutation.mutate(item);
+                  if (confirm(`Delete ${item.itemName} (${item.itemNumber})? Sales history snapshots stay intact.`)) deleteMutation.mutate(item);
                 }}
               >
                 <Trash2 size={16} /> Delete
@@ -162,10 +190,13 @@ export function InventoryScreen() {
 function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null; onClose: () => void; onSaved: () => void }) {
   const { organization } = useOrg();
   const { user } = useAuth();
+  const [selectedType, setSelectedType] = useState<InventoryItemType | null>(item?.itemType || null);
   const [input, setInput] = useState<InventoryInput>({
     itemNumber: item?.itemNumber || '',
     autoGenerateItemNumber: !item,
-    cardName: item?.cardName || '',
+    itemType: item?.itemType || 'single_card',
+    productCategory: item?.productCategory || null,
+    itemName: item?.itemName || '',
     cardNumber: item?.cardNumber || '',
     setName: item?.setName || '',
     rarity: item?.rarity || 'C',
@@ -194,12 +225,17 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
   }, []);
 
   useEffect(() => {
-    if (!input.autoGenerateItemNumber || !input.cardNumber.trim() || !input.condition.trim()) {
+    const reference = input.itemType === 'single_card'
+      ? input.cardNumber || ''
+      : input.itemType === 'sealed_product'
+        ? input.productCategory || ''
+        : 'pack';
+    if (!input.autoGenerateItemNumber || !reference.trim() || !input.condition.trim()) {
       setGeneratedItemNumber(input.itemNumber || '');
       return;
     }
     let cancelled = false;
-    generateInventoryItemNumber(organization.id, input.cardNumber, input.condition)
+    generateInventoryItemNumber(organization.id, input.itemType, reference, input.condition)
       .then((number) => {
         if (!cancelled) setGeneratedItemNumber(number);
       })
@@ -209,7 +245,7 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
     return () => {
       cancelled = true;
     };
-  }, [input.autoGenerateItemNumber, input.cardNumber, input.condition, input.itemNumber, organization.id]);
+  }, [input.autoGenerateItemNumber, input.cardNumber, input.condition, input.itemNumber, input.itemType, input.productCategory, organization.id]);
   const mutation = useMutation({
     mutationFn: () => {
       if (!user) throw new Error('Not signed in');
@@ -227,6 +263,7 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
         className="grid max-h-dvh min-h-dvh w-full min-w-0 max-w-2xl gap-4 overflow-y-auto overscroll-contain bg-white p-3 shadow-soft sm:min-h-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-lg sm:p-4"
         onSubmit={(event) => {
           event.preventDefault();
+          if (!selectedType) return;
           mutation.mutate();
         }}
       >
@@ -236,39 +273,100 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
             <X size={22} />
           </button>
         </div>
-        <Field label="Card name"><TextInput value={input.cardName} onChange={(e) => setInput({ ...input, cardName: e.target.value })} required /></Field>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Card number"><TextInput value={input.cardNumber} onChange={(e) => setInput({ ...input, cardNumber: e.target.value })} required /></Field>
-          <Field label="Set name">
-            <SelectInput
-              value={input.setName}
-              onValueChange={(value) => setInput({ ...input, setName: value })}
-              placeholder="Select a set"
-              options={ONE_PIECE_SET_NAMES.map((value) => ({ value, label: value }))}
+        {!selectedType ? (
+          <div className="grid gap-3">
+            <p className="text-sm font-semibold text-slate-600">What are you adding?</p>
+            <ItemTypeChoice
+              icon={<CreditCard size={24} />}
+              title="Single card"
+              description="One Piece singles with card number, set, rarity, art and condition."
+              onClick={() => chooseItemType('single_card')}
             />
-          </Field>
-        </div>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Field label="Rarity">
-            <SelectInput value={input.rarity} onValueChange={(value) => setInput({ ...input, rarity: value as CardRarity })} options={rarityOptions} />
-          </Field>
-          <Field label="Art">
-            <SelectInput value={input.art} onValueChange={(value) => setInput({ ...input, art: value as CardArt })} options={artOptions} />
-          </Field>
-          <Field label="Language">
-            <SelectInput value={input.language} onValueChange={(value) => setInput({ ...input, language: value as CardLanguage })} options={languageOptions} />
-          </Field>
-          <Field label="Category">
-            <SelectInput value={input.category} onValueChange={(value) => setInput({ ...input, category: value as CardCategory })} options={categoryOptions} />
-          </Field>
-        </div>
-        <div className="grid gap-3 min-[380px]:grid-cols-3">
-          <Field label="Condition">
-            <SelectInput value={input.condition} onValueChange={(value) => setInput({ ...input, condition: value })} options={conditionOptions} />
-          </Field>
-          <Field label="Grade co."><TextInput value={input.gradeCompany || ''} onChange={(e) => setInput({ ...input, gradeCompany: e.target.value })} /></Field>
-          <Field label="Grade"><TextInput value={input.grade || ''} onChange={(e) => setInput({ ...input, grade: e.target.value })} /></Field>
-        </div>
+            <ItemTypeChoice
+              icon={<Package size={24} />}
+              title="Sealed product"
+              description="Booster boxes, booster packs, starter decks, promo sets and collections."
+              onClick={() => chooseItemType('sealed_product')}
+            />
+            <ItemTypeChoice
+              icon={<Sparkles size={24} />}
+              title="Mystery pack"
+              description="Self-made mystery packs sold as your own product."
+              onClick={() => chooseItemType('mystery_pack')}
+            />
+          </div>
+        ) : (
+          <>
+            {!item && (
+              <button
+                type="button"
+                className="min-h-11 rounded-md border border-line bg-slate-50 px-3 text-left text-sm font-semibold text-action"
+                onClick={() => setSelectedType(null)}
+              >
+                {inventoryItemTypeLabels[selectedType]} · Change type
+              </button>
+            )}
+            <Field label={selectedType === 'single_card' ? 'Card name' : 'Product name'}>
+              <TextInput value={input.itemName} onChange={(e) => setInput({ ...input, itemName: e.target.value })} required />
+            </Field>
+            {selectedType === 'single_card' && (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Card number"><TextInput value={input.cardNumber || ''} onChange={(e) => setInput({ ...input, cardNumber: e.target.value })} required /></Field>
+                  <Field label="Set name">
+                    <SelectInput
+                      value={input.setName || ''}
+                      onValueChange={(value) => setInput({ ...input, setName: value })}
+                      placeholder="Select a set"
+                      options={ONE_PIECE_SET_NAMES.map((value) => ({ value, label: value }))}
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <Field label="Rarity">
+                    <SelectInput value={input.rarity || 'C'} onValueChange={(value) => setInput({ ...input, rarity: value as CardRarity })} options={rarityOptions} />
+                  </Field>
+                  <Field label="Art">
+                    <SelectInput value={input.art || 'Base'} onValueChange={(value) => setInput({ ...input, art: value as CardArt })} options={artOptions} />
+                  </Field>
+                  <Field label="Language">
+                    <SelectInput value={input.language} onValueChange={(value) => setInput({ ...input, language: value as CardLanguage })} options={languageOptions} />
+                  </Field>
+                  <Field label="Category">
+                    <SelectInput value={input.category || 'Character'} onValueChange={(value) => setInput({ ...input, category: value as CardCategory })} options={categoryOptions} />
+                  </Field>
+                </div>
+                <Field label="Condition">
+                  <SelectInput value={input.condition} onValueChange={(value) => setInput({ ...input, condition: value })} options={conditionOptions} />
+                </Field>
+                {input.condition === 'GRADED' && (
+                  <div className="grid gap-3 min-[380px]:grid-cols-2">
+                    <Field label="Grade company"><TextInput value={input.gradeCompany || ''} onChange={(e) => setInput({ ...input, gradeCompany: e.target.value })} /></Field>
+                    <Field label="Grade"><TextInput value={input.grade || ''} onChange={(e) => setInput({ ...input, grade: e.target.value })} /></Field>
+                  </div>
+                )}
+              </>
+            )}
+            {selectedType === 'sealed_product' && (
+              <div className="grid gap-3 min-[400px]:grid-cols-2">
+                <Field label="Sealed product type">
+                  <SelectInput
+                    value={input.productCategory || ''}
+                    onValueChange={(value) => setInput({ ...input, productCategory: value as SealedProductType })}
+                    placeholder="Select product type"
+                    options={sealedProductTypeOptions}
+                  />
+                </Field>
+                <Field label="Condition">
+                  <SelectInput value={input.condition} onValueChange={(value) => setInput({ ...input, condition: value })} options={sealedConditionOptions} />
+                </Field>
+              </div>
+            )}
+            {selectedType !== 'single_card' && (
+              <Field label="Language">
+                <SelectInput value={input.language} onValueChange={(value) => setInput({ ...input, language: value as CardLanguage })} options={languageOptions} />
+              </Field>
+            )}
         <div className="grid gap-3 min-[380px]:grid-cols-3">
           <Field label="Qty"><TextInput type="number" min={0} value={input.quantity} onChange={(e) => setInput({ ...input, quantity: Number(e.target.value) })} required /></Field>
           <Field label="Cost"><TextInput type="number" min={0} step="0.01" value={input.costBasis ?? ''} onChange={(e) => setInput({ ...input, costBasis: e.target.value ? Number(e.target.value) : null })} /></Field>
@@ -292,7 +390,13 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
               required={!input.autoGenerateItemNumber}
             />
           </Field>
-          <p className="mt-2 text-xs text-slate-500">Format: OP + card number + condition + sequence.</p>
+          <p className="mt-2 text-xs text-slate-500">
+            {selectedType === 'single_card'
+              ? 'Format: OP + card number + condition + sequence.'
+              : selectedType === 'sealed_product'
+                ? 'Format: SEALED + product type + sequence.'
+                : 'Format: MYSTERY-PACK + sequence.'}
+          </p>
         </div>
         <Field label="Photo">
           <TextInput
@@ -320,10 +424,63 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
         {mutation.error && <p className="text-sm text-danger">{mutation.error.message}</p>}
         <div className="sticky bottom-0 flex gap-2 bg-white pt-2">
           <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button className="flex-1" disabled={mutation.isPending || !input.setName}>{mutation.isPending ? 'Saving...' : 'Save'}</Button>
+          <Button
+            className="flex-1"
+            disabled={
+              mutation.isPending ||
+              !input.itemName.trim() ||
+              (selectedType === 'single_card' && (!input.setName || !input.cardNumber)) ||
+              (selectedType === 'sealed_product' && !input.productCategory)
+            }
+          >
+            {mutation.isPending ? 'Saving...' : 'Save'}
+          </Button>
         </div>
+          </>
+        )}
       </form>
     </div>
+  );
+
+  function chooseItemType(itemType: InventoryItemType) {
+    setSelectedType(itemType);
+    setInput((current) => ({
+      ...current,
+      itemType,
+      productCategory: itemType === 'sealed_product' ? 'booster_box' : null,
+      cardNumber: itemType === 'single_card' ? current.cardNumber : null,
+      setName: itemType === 'single_card' ? current.setName : null,
+      rarity: itemType === 'single_card' ? current.rarity || 'C' : null,
+      art: itemType === 'single_card' ? current.art || 'Base' : null,
+      category: itemType === 'single_card' ? current.category || 'Character' : null,
+      condition: itemType === 'single_card' ? 'NM' : itemType === 'sealed_product' ? 'SEALED' : 'NEW'
+    }));
+  }
+}
+
+function ItemTypeChoice({
+  icon,
+  title,
+  description,
+  onClick
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="grid min-h-20 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-line bg-white p-3 text-left shadow-sm transition hover:border-action hover:bg-sky-50"
+      onClick={onClick}
+    >
+      <span className="grid h-12 w-12 place-items-center rounded-md bg-slate-100 text-action">{icon}</span>
+      <span className="min-w-0">
+        <strong className="block">{title}</strong>
+        <span className="mt-1 block text-sm text-slate-600">{description}</span>
+      </span>
+    </button>
   );
 }
 

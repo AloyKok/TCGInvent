@@ -3,9 +3,11 @@ import type {
   CardCategory,
   CardLanguage,
   CardRarity,
+  InventoryItemType,
   InventoryStatus,
   MemberRole,
   PaymentMethod,
+  SealedProductType,
   TransactionStatus
 } from './domain';
 
@@ -67,13 +69,15 @@ export interface Database {
           id: string;
           org_id: string;
           item_number: string;
-          card_name: string;
-          card_number: string;
-          set_name: string;
-          rarity: CardRarity;
-          art: CardArt;
+          item_type: InventoryItemType;
+          product_category: SealedProductType | null;
+          item_name: string;
+          card_number: string | null;
+          set_name: string | null;
+          rarity: CardRarity | null;
+          art: CardArt | null;
           language: CardLanguage;
-          category: CardCategory;
+          category: CardCategory | null;
           condition: string;
           grade_company: string | null;
           grade: string | null;
@@ -93,13 +97,15 @@ export interface Database {
           id?: string;
           org_id: string;
           item_number: string;
-          card_name: string;
-          card_number: string;
-          set_name: string;
-          rarity?: CardRarity;
-          art?: CardArt;
+          item_type?: InventoryItemType;
+          product_category?: SealedProductType | null;
+          item_name: string;
+          card_number?: string | null;
+          set_name?: string | null;
+          rarity?: CardRarity | null;
+          art?: CardArt | null;
           language?: CardLanguage;
-          category?: CardCategory;
+          category?: CardCategory | null;
           condition?: string;
           grade_company?: string | null;
           grade?: string | null;
@@ -197,7 +203,7 @@ export interface Database {
         Returns: Database['public']['Tables']['transactions']['Row'];
       };
       generate_item_number: {
-        Args: { p_org_id: string; p_card_number: string; p_condition: string };
+        Args: { p_org_id: string; p_item_type: InventoryItemType; p_reference: string; p_condition: string };
         Returns: string;
       };
       void_sale: { Args: { p_org_id: string; p_transaction_id: string }; Returns: Database['public']['Tables']['transactions']['Row'] };
@@ -208,6 +214,8 @@ export interface Database {
       card_rarity: CardRarity;
       card_art: CardArt;
       card_category: CardCategory;
+      inventory_item_type: InventoryItemType;
+      sealed_product_type: SealedProductType;
       inventory_status: InventoryStatus;
       payment_method: PaymentMethod;
       transaction_status: TransactionStatus;

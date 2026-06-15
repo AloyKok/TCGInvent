@@ -62,11 +62,11 @@ export function SellScreen() {
       return;
     }
     if (item.quantity <= 0 || item.status !== 'in_stock') {
-      showFeedback(setFlash, 'error', `${item.cardName} is not available`);
+      showFeedback(setFlash, 'error', `${item.itemName} is not available`);
       return;
     }
     cart.addItem(item, 1);
-    showFeedback(setFlash, 'ok', `${item.cardName} $${item.askingPrice.toFixed(2)}`);
+    showFeedback(setFlash, 'ok', `${item.itemName} $${item.askingPrice.toFixed(2)}`);
   }, [cart, resolveItem, selectedEvent]);
 
   const checkoutMutation = useMutation({
@@ -204,7 +204,7 @@ export function SellScreen() {
               <div key={line.item.id} className="min-w-0 rounded-md border border-line p-3">
                 <div className="flex min-w-0 justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="break-words font-bold">{line.item.cardName}</p>
+                    <p className="break-words font-bold">{line.item.itemName}</p>
                     <p className="break-all text-xs text-slate-600">{line.item.itemNumber}</p>
                     <p className="break-words text-xs text-slate-600">{line.item.rarity} / {line.item.art} / {line.item.category} / {line.item.condition}</p>
                     <p className="text-sm font-semibold">${line.item.askingPrice.toFixed(2)}</p>
@@ -277,7 +277,7 @@ function ManualResults({ items, query, onAdd }: { items: InventoryItem[]; query:
     const value = query.trim().toLowerCase();
     if (value.length < 2) return [];
     return items
-      .filter((item) => [item.cardName, item.itemNumber, item.cardNumber].join(' ').toLowerCase().includes(value))
+      .filter((item) => [item.itemName, item.itemNumber, item.cardNumber, item.productCategory].filter(Boolean).join(' ').toLowerCase().includes(value))
       .slice(0, 5);
   }, [items, query]);
 
@@ -287,7 +287,7 @@ function ManualResults({ items, query, onAdd }: { items: InventoryItem[]; query:
     <div className="mt-3 grid gap-1">
       {results.map((item) => (
         <button key={item.id} type="button" className="min-h-11 min-w-0 rounded-md bg-slate-50 px-3 py-2 text-left text-sm" onClick={() => onAdd(item.id)}>
-          <strong className="break-words">{item.cardName}</strong>
+          <strong className="break-words">{item.itemName}</strong>
           <span className="block break-all text-xs text-slate-600">{item.itemNumber} / ${item.askingPrice.toFixed(2)}</span>
         </button>
       ))}

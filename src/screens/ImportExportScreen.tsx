@@ -6,7 +6,14 @@ import { Field, TextArea } from '../components/Field';
 import { listInventory, listTransactions, saveInventoryItem, type InventoryInput } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 import { useAuth } from '../lib/supabase/AuthProvider';
-import type { CardArt, CardCategory, CardLanguage, CardRarity } from '../types/domain';
+import type {
+  CardArt,
+  CardCategory,
+  CardLanguage,
+  CardRarity,
+  InventoryItemType,
+  SealedProductType
+} from '../types/domain';
 
 export function ImportExportScreen() {
   const { organization, isOwner } = useOrg();
@@ -26,14 +33,16 @@ export function ImportExportScreen() {
           const input: InventoryInput = {
             itemNumber: row.item_number,
             autoGenerateItemNumber: !row.item_number,
-            cardName: row.card_name,
-            cardNumber: row.card_number,
-            setName: row.set_name,
-            rarity: (row.rarity || 'C') as CardRarity,
-            art: (row.art || 'Base') as CardArt,
+            itemType: (row.item_type || 'single_card') as InventoryItemType,
+            productCategory: (row.product_category || null) as SealedProductType | null,
+            itemName: row.item_name || row.card_name,
+            cardNumber: row.card_number || null,
+            setName: row.set_name || null,
+            rarity: row.rarity ? row.rarity as CardRarity : null,
+            art: row.art ? row.art as CardArt : null,
             language: (row.language || 'EN') as CardLanguage,
-            category: (row.category || 'Character') as CardCategory,
-            condition: row.condition || 'NM',
+            category: row.category ? row.category as CardCategory : null,
+            condition: row.condition || (row.item_type === 'sealed_product' ? 'SEALED' : row.item_type === 'mystery_pack' ? 'NEW' : 'NM'),
             gradeCompany: row.grade_company || null,
             grade: row.grade || null,
             quantity: Number(row.quantity || 1),
@@ -44,9 +53,11 @@ export function ImportExportScreen() {
             notes: row.notes || null,
             status: 'in_stock'
           };
-          if (!input.cardName || !input.setName || !input.cardNumber) throw new Error('missing required card fields');
+          if (!input.itemName) throw new Error('missing item_name');
+          if (input.itemType === 'single_card' && (!input.setName || !input.cardNumber)) throw new Error('missing required card fields');
+          if (input.itemType === 'sealed_product' && !input.productCategory) throw new Error('missing product_category');
           await saveInventoryItem(organization.id, user.id, input);
-          messages.push(`Row ${index + 2}: imported ${input.cardName}`);
+          messages.push(`Row ${index + 2}: imported ${input.itemName}`);
         } catch (error) {
           messages.push(`Row ${index + 2}: ${error instanceof Error ? error.message : 'failed'}`);
         }
@@ -57,13 +68,15 @@ export function ImportExportScreen() {
   });
   const inventoryCsv = useMemo(() => Papa.unparse((inventoryQuery.data || []).map((item) => ({
     item_number: item.itemNumber,
-    card_name: item.cardName,
-    card_number: item.cardNumber,
-    set_name: item.setName,
-    rarity: item.rarity,
-    art: item.art,
+    item_type: item.itemType,
+    product_category: item.productCategory || '',
+    item_name: item.itemName,
+    card_number: item.cardNumber || '',
+    set_name: item.setName || '',
+    rarity: item.rarity || '',
+    art: item.art || '',
     language: item.language,
-    category: item.category,
+    category: item.category || '',
     condition: item.condition,
     grade_company: item.gradeCompany || '',
     grade: item.grade || '',
@@ -81,11 +94,13 @@ export function ImportExportScreen() {
       status: tx.status,
       payment_method: tx.paymentMethod,
       total: tx.total,
-      card_name: line.cardNameSnapshot,
+      item_name: line.itemNameSnapshot,
+      item_type: line.itemTypeSnapshot,
+      product_category: line.productCategorySnapshot || '',
       item_number: line.itemNumberSnapshot,
-      rarity: line.raritySnapshot,
-      art: line.artSnapshot,
-      category: line.categorySnapshot,
+      rarity: line.raritySnapshot || '',
+      art: line.artSnapshot || '',
+      category: line.categorySnapshot || '',
       quantity: line.quantity,
       unit_price: line.unitPrice,
       line_total: line.lineTotal,
@@ -98,7 +113,7 @@ export function ImportExportScreen() {
       <h2 className="text-2xl font-black">Import / Export</h2>
       <section className="grid gap-3 rounded-lg border border-line bg-white p-3">
         <h3 className="font-black">CSV import</h3>
-        <p className="break-words text-sm text-slate-600">Columns: item_number, card_name, card_number, set_name, rarity, art, language, category, condition, grade_company, grade, quantity, cost_basis, asking_price, market_price, image_url, notes. Leave item_number blank to auto-generate it.</p>
+        <p className="break-words text-sm text-slate-600">Columns: item_number, item_type, product_category, item_name, card_number, set_name, rarity, art, language, category, condition, grade_company, grade, quantity, cost_basis, asking_price, market_price, image_url, notes. Item types: single_card, sealed_product, mystery_pack. Leave item_number blank to auto-generate it.</p>
         <Field label="Inventory CSV">
           <TextArea value={csv} onChange={(event) => setCsv(event.target.value)} />
         </Field>

@@ -94,7 +94,10 @@ export function HistoryScreen() {
             <div className="mt-3 grid gap-1">
               {tx.lineItems.map((line) => (
                 <div key={`${tx.id}-${line.inventoryItemId}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-md bg-slate-50 p-2 text-sm">
-                  <span className="min-w-0 break-words">{line.cardNameSnapshot} / <span className="break-all">{line.itemNumberSnapshot}</span> / {line.raritySnapshot} {line.artSnapshot} x {line.quantity}</span>
+                  <span className="min-w-0 break-words">
+                    {line.itemNameSnapshot} / <span className="break-all">{line.itemNumberSnapshot}</span>
+                    {line.raritySnapshot ? ` / ${line.raritySnapshot} ${line.artSnapshot || ''}` : ''} x {line.quantity}
+                  </span>
                   <strong className="whitespace-nowrap">${line.lineTotal.toFixed(2)}</strong>
                 </div>
               ))}

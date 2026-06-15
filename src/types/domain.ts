@@ -3,6 +3,8 @@ export type CardLanguage = 'EN' | 'JP' | 'OTHER';
 export type CardRarity = 'C' | 'UC' | 'R' | 'SR' | 'SEC' | 'L' | 'P' | 'TR' | 'SP';
 export type CardArt = 'Base' | 'Parallel' | 'Manga';
 export type CardCategory = 'Character' | 'Leader' | 'Event' | 'Stage' | 'DON';
+export type InventoryItemType = 'single_card' | 'sealed_product' | 'mystery_pack';
+export type SealedProductType = 'booster_box' | 'booster_pack' | 'starter_deck' | 'special_promo_set' | 'collection' | 'other_sealed';
 export type InventoryStatus = 'in_stock' | 'sold_out' | 'reserved';
 export type PaymentMethod = 'cash' | 'card' | 'other';
 export type TransactionStatus = 'completed' | 'voided';
@@ -27,13 +29,15 @@ export interface InventoryItem {
   id: string;
   orgId: string;
   itemNumber: string;
-  cardName: string;
-  cardNumber: string;
-  setName: string;
-  rarity: CardRarity;
-  art: CardArt;
+  itemType: InventoryItemType;
+  productCategory?: SealedProductType | null;
+  itemName: string;
+  cardNumber?: string | null;
+  setName?: string | null;
+  rarity?: CardRarity | null;
+  art?: CardArt | null;
   language: CardLanguage;
-  category: CardCategory;
+  category?: CardCategory | null;
   condition: string;
   gradeCompany?: string | null;
   grade?: string | null;
@@ -52,11 +56,13 @@ export interface InventoryItem {
 
 export interface SaleLineItem {
   inventoryItemId: string;
-  cardNameSnapshot: string;
+  itemNameSnapshot: string;
+  itemTypeSnapshot: InventoryItemType;
+  productCategorySnapshot?: SealedProductType | null;
   itemNumberSnapshot: string;
-  raritySnapshot: CardRarity;
-  artSnapshot: CardArt;
-  categorySnapshot: CardCategory;
+  raritySnapshot?: CardRarity | null;
+  artSnapshot?: CardArt | null;
+  categorySnapshot?: CardCategory | null;
   conditionSnapshot: string;
   quantity: number;
   unitPrice: number;
@@ -121,6 +127,7 @@ export interface QueuedSale {
 
 export interface InventoryFilters {
   search: string;
+  itemType: string;
   setName: string;
   rarity: string;
   art: string;

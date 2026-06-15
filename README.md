@@ -152,19 +152,19 @@ Use the Labels screen, filter the items, then print. The default sheet preset is
 Inventory CSV columns:
 
 ```text
-item_number,card_name,card_number,set_name,rarity,art,language,category,condition,grade_company,grade,quantity,cost_basis,asking_price,market_price,image_url,notes
+item_number,item_type,product_category,item_name,card_number,set_name,rarity,art,language,category,condition,grade_company,grade,quantity,cost_basis,asking_price,market_price,image_url,notes
 ```
 
 Required:
 
-- `card_name`
-- `card_number`
-- `set_name`
-- `rarity`
-- `art`
+- `item_type`: `single_card`, `sealed_product`, or `mystery_pack`
+- `item_name`
 - `language`
-- `category`
 - `asking_price`
+
+For `single_card`, also provide `card_number`, `set_name`, `rarity`, `art`, and `category`.
+
+For `sealed_product`, provide `product_category`: `booster_box`, `booster_pack`, `starter_deck`, `special_promo_set`, `collection`, or `other_sealed`.
 
 Recommended One Piece values:
 

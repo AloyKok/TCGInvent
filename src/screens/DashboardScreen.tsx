@@ -99,7 +99,7 @@ export function DashboardScreen() {
           {metrics.lowStock.length === 0 && <p className="text-sm text-slate-600">No low-stock items.</p>}
           {metrics.lowStock.slice(0, 12).map((item) => (
             <div key={item.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-md bg-slate-50 p-3 text-sm">
-              <span className="min-w-0 break-words">{item.cardName} / <span className="break-all">{item.itemNumber}</span></span>
+              <span className="min-w-0 break-words">{item.itemName} / <span className="break-all">{item.itemNumber}</span></span>
               <strong className="whitespace-nowrap">qty {item.quantity}</strong>
             </div>
           ))}

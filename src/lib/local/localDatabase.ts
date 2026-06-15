@@ -1,6 +1,7 @@
 import type {
   InventoryFilters,
   InventoryItem,
+  InventoryItemType,
   Membership,
   Organization,
   QueuedSale,
@@ -51,6 +52,35 @@ export function getLocalDatabase(): LocalDatabase {
         migrated = true;
         return { ...rest, startDate: fallbackDate, endDate: fallbackDate };
       });
+      parsed.inventory = parsed.inventory.map((item) => {
+        const legacyItem = item as InventoryItem & { cardName?: string };
+        if (legacyItem.itemType && legacyItem.itemName) return item;
+        const rest = { ...legacyItem };
+        delete rest.cardName;
+        migrated = true;
+        return {
+          ...rest,
+          itemType: 'single_card',
+          productCategory: null,
+          itemName: legacyItem.cardName || 'Unnamed item'
+        };
+      });
+      parsed.transactions = parsed.transactions.map((transaction) => ({
+        ...transaction,
+        lineItems: transaction.lineItems.map((line) => {
+          const legacyLine = line as typeof line & { cardNameSnapshot?: string };
+          if (legacyLine.itemNameSnapshot) return line;
+          const rest = { ...legacyLine };
+          delete rest.cardNameSnapshot;
+          migrated = true;
+          return {
+            ...rest,
+            itemNameSnapshot: legacyLine.cardNameSnapshot || 'Unnamed item',
+            itemTypeSnapshot: 'single_card' as const,
+            productCategorySnapshot: null
+          };
+        })
+      }));
       if (migrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
       return parsed;
     } catch {
@@ -79,7 +109,8 @@ export function getLocalMemberships() {
 export function getLocalInventory(filters?: Partial<InventoryFilters>) {
   let rows = [...getLocalDatabase().inventory].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   if (filters?.status) rows = rows.filter((item) => item.status === filters.status);
-  if (filters?.setName) rows = rows.filter((item) => item.setName.toLowerCase().includes(filters.setName!.toLowerCase()));
+  if (filters?.itemType) rows = rows.filter((item) => item.itemType === filters.itemType);
+  if (filters?.setName) rows = rows.filter((item) => item.setName?.toLowerCase().includes(filters.setName!.toLowerCase()));
   if (filters?.rarity) rows = rows.filter((item) => item.rarity === filters.rarity);
   if (filters?.art) rows = rows.filter((item) => item.art === filters.art);
   if (filters?.category) rows = rows.filter((item) => item.category === filters.category);
@@ -90,7 +121,8 @@ export function getLocalInventory(filters?: Partial<InventoryFilters>) {
   const search = filters?.search?.trim().toLowerCase();
   if (search) {
     rows = rows.filter((item) =>
-      [item.cardName, item.setName, item.cardNumber, item.itemNumber, item.rarity, item.art, item.category, item.condition]
+      [item.itemName, item.setName, item.cardNumber, item.itemNumber, item.itemType, item.productCategory, item.rarity, item.art, item.category, item.condition]
+        .filter(Boolean)
         .join(' ')
         .toLowerCase()
         .includes(search)
@@ -103,8 +135,13 @@ export function saveLocalInventoryItem(input: InventoryInput, itemId?: string) {
   const db = getLocalDatabase();
   const clean = normalizeInput(input);
   const now = new Date().toISOString();
+  const reference = clean.itemType === 'single_card'
+    ? clean.cardNumber || ''
+    : clean.itemType === 'sealed_product'
+      ? clean.productCategory || 'other_sealed'
+      : 'pack';
   const requestedItemNumber = clean.autoGenerateItemNumber
-    ? generateLocalItemNumber(clean.cardNumber, clean.condition, db.inventory, itemId)
+    ? generateLocalItemNumber(clean.itemType, reference, clean.condition, db.inventory, itemId)
     : clean.itemNumber;
 
   if (!requestedItemNumber) throw new Error('Item number is required when auto-generation is off');
@@ -113,7 +150,7 @@ export function saveLocalInventoryItem(input: InventoryInput, itemId?: string) {
     item.itemNumber.toUpperCase() === requestedItemNumber.toUpperCase() && item.id !== itemId
   );
   if (duplicate) {
-    throw new Error(`Item number ${requestedItemNumber} is already recorded for ${duplicate.cardName}`);
+    throw new Error(`Item number ${requestedItemNumber} is already recorded for ${duplicate.itemName}`);
   }
 
   if (itemId) {
@@ -131,6 +168,9 @@ export function saveLocalInventoryItem(input: InventoryInput, itemId?: string) {
   }
 
   const existing = clean.autoGenerateItemNumber ? db.inventory.find((item) =>
+    item.itemType === clean.itemType &&
+    item.itemName === clean.itemName &&
+    item.productCategory === clean.productCategory &&
     item.cardNumber === clean.cardNumber &&
     item.setName === clean.setName &&
     item.rarity === clean.rarity &&
@@ -158,7 +198,9 @@ export function saveLocalInventoryItem(input: InventoryInput, itemId?: string) {
     id: crypto.randomUUID(),
     orgId: LOCAL_ORG_ID,
     itemNumber: requestedItemNumber,
-    cardName: clean.cardName,
+    itemType: clean.itemType,
+    productCategory: clean.productCategory,
+    itemName: clean.itemName,
     cardNumber: clean.cardNumber,
     setName: clean.setName,
     rarity: clean.rarity,
@@ -202,14 +244,16 @@ export function completeLocalSale(payload: Omit<QueuedSale, 'id' | 'createdAt' |
     if (!item) throw new Error(`Inventory item ${line.inventoryItemId} not found`);
     const quantity = Math.max(1, Number(line.quantity) || 1);
     if (item.status === 'reserved' || item.quantity < quantity) {
-      throw new Error(`Insufficient stock for ${item.cardName} (${item.itemNumber})`);
+      throw new Error(`Insufficient stock for ${item.itemName} (${item.itemNumber})`);
     }
     return { item, quantity };
   });
 
   const lineItems = requested.map(({ item, quantity }) => ({
     inventoryItemId: item.id,
-    cardNameSnapshot: item.cardName,
+    itemNameSnapshot: item.itemName,
+    itemTypeSnapshot: item.itemType,
+    productCategorySnapshot: item.productCategory,
     itemNumberSnapshot: item.itemNumber,
     raritySnapshot: item.rarity,
     artSnapshot: item.art,
@@ -333,19 +377,26 @@ function writeDatabase(db: LocalDatabase) {
 
 function normalizeInput(input: InventoryInput) {
   const quantity = Math.max(0, Number(input.quantity) || 0);
+  const isCard = input.itemType === 'single_card';
+  const isSealed = input.itemType === 'sealed_product';
+  if (!input.itemName.trim()) throw new Error('Item name is required');
+  if (isCard && (!input.cardNumber?.trim() || !input.setName?.trim())) throw new Error('Card number and set name are required');
+  if (isSealed && !input.productCategory) throw new Error('Sealed product type is required');
   return {
     itemNumber: input.itemNumber?.trim().toUpperCase() || '',
     autoGenerateItemNumber: input.autoGenerateItemNumber ?? true,
-    cardName: input.cardName.trim(),
-    cardNumber: input.cardNumber.trim().toUpperCase(),
-    setName: input.setName.trim(),
-    rarity: input.rarity,
-    art: input.art,
+    itemType: input.itemType,
+    productCategory: isSealed ? input.productCategory || null : null,
+    itemName: input.itemName.trim(),
+    cardNumber: isCard ? input.cardNumber?.trim().toUpperCase() || null : null,
+    setName: isCard ? input.setName?.trim() || null : null,
+    rarity: isCard ? input.rarity || 'C' : null,
+    art: isCard ? input.art || 'Base' : null,
     language: input.language,
-    category: input.category,
-    condition: input.condition.trim() || 'NM',
-    gradeCompany: input.condition === 'GRADED' ? input.gradeCompany?.trim() || null : null,
-    grade: input.condition === 'GRADED' ? input.grade?.trim() || null : null,
+    category: isCard ? input.category || 'Character' : null,
+    condition: input.condition.trim() || (isSealed ? 'SEALED' : input.itemType === 'mystery_pack' ? 'NEW' : 'NM'),
+    gradeCompany: isCard && input.condition === 'GRADED' ? input.gradeCompany?.trim() || null : null,
+    grade: isCard && input.condition === 'GRADED' ? input.grade?.trim() || null : null,
     quantity,
     costBasis: input.costBasis == null ? null : Math.max(0, Number(input.costBasis)),
     askingPrice: Math.max(0, Number(input.askingPrice) || 0),
@@ -356,11 +407,21 @@ function normalizeInput(input: InventoryInput) {
   };
 }
 
-export function generateLocalItemNumber(cardNumber: string, condition: string, items = getLocalDatabase().inventory, excludeId?: string) {
-  const cleanCardNumber = cardNumber.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+export function generateLocalItemNumber(
+  itemType: InventoryItemType,
+  reference: string,
+  condition: string,
+  items = getLocalDatabase().inventory,
+  excludeId?: string
+) {
+  const cleanReference = reference.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '-');
   const cleanCondition = condition.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (!cleanCardNumber || !cleanCondition) return '';
-  const prefix = `OP-${cleanCardNumber}-${cleanCondition}-`;
+  if (!cleanReference || !cleanCondition) return '';
+  const prefix = itemType === 'single_card'
+    ? `OP-${cleanReference}-${cleanCondition}-`
+    : itemType === 'sealed_product'
+      ? `SEALED-${cleanReference}-`
+      : 'MYSTERY-PACK-';
   const highest = items.reduce((max, item) => {
     if (item.id === excludeId || !item.itemNumber.startsWith(prefix)) return max;
     const sequence = Number(item.itemNumber.slice(prefix.length));
@@ -423,7 +484,7 @@ function createSeedDatabase(): LocalDatabase {
 function seedItem(
   id: string,
   itemNumber: string,
-  cardName: string,
+  itemName: string,
   cardNumber: string,
   setName: string,
   rarity: InventoryItem['rarity'],
@@ -440,7 +501,9 @@ function seedItem(
     id,
     orgId: LOCAL_ORG_ID,
     itemNumber,
-    cardName,
+    itemType: 'single_card',
+    productCategory: null,
+    itemName,
     cardNumber,
     setName,
     rarity,

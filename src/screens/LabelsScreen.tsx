@@ -14,7 +14,7 @@ export function LabelsScreen() {
   const inventoryQuery = useQuery({ queryKey: ['inventory', organization.id, 'labels'], queryFn: () => listInventory(organization.id) });
   const currency = settingsQuery.data?.currency || 'USD';
   const items = (inventoryQuery.data || []).filter((item) =>
-    [item.cardName, item.itemNumber, item.cardNumber].join(' ').toLowerCase().includes(search.toLowerCase())
+    [item.itemName, item.itemNumber, item.cardNumber, item.productCategory].filter(Boolean).join(' ').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -28,7 +28,7 @@ export function LabelsScreen() {
       </div>
       <div className="print:hidden">
         <Field label="Filter labels">
-          <TextInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, item number, card number" />
+          <TextInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, item number or product type" />
         </Field>
       </div>
       <div className="label-sheet grid gap-2 sm:grid-cols-2 md:grid-cols-3 print:grid-cols-3 print:gap-0">

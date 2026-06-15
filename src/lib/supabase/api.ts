@@ -15,9 +15,11 @@ import type {
   CardRarity,
   InventoryFilters,
   InventoryItem,
+  InventoryItemType,
   InventoryStatus,
   MemberRole,
   QueuedSale,
+  SealedProductType,
   Settings,
   ShowEvent
 } from '../../types/domain';
@@ -46,13 +48,15 @@ type InventoryRow = Database['public']['Tables']['inventory_items']['Row'];
 export interface InventoryInput {
   itemNumber?: string;
   autoGenerateItemNumber?: boolean;
-  cardName: string;
-  cardNumber: string;
-  setName: string;
-  rarity: CardRarity;
-  art: CardArt;
+  itemType: InventoryItemType;
+  productCategory?: SealedProductType | null;
+  itemName: string;
+  cardNumber?: string | null;
+  setName?: string | null;
+  rarity?: CardRarity | null;
+  art?: CardArt | null;
   language: CardLanguage;
-  category: CardCategory;
+  category?: CardCategory | null;
   condition: string;
   gradeCompany?: string | null;
   grade?: string | null;
@@ -124,6 +128,7 @@ export async function listInventory(orgId: string, filters?: Partial<InventoryFi
   let query = supabase.from('inventory_items').select('*').eq('org_id', orgId).order('updated_at', { ascending: false });
 
   if (filters?.status) query = query.eq('status', filters.status as InventoryStatus);
+  if (filters?.itemType) query = query.eq('item_type', filters.itemType as InventoryItemType);
   if (filters?.setName) query = query.ilike('set_name', `%${filters.setName}%`);
   if (filters?.rarity) query = query.eq('rarity', filters.rarity as CardRarity);
   if (filters?.art) query = query.eq('art', filters.art as CardArt);
@@ -140,7 +145,8 @@ export async function listInventory(orgId: string, filters?: Partial<InventoryFi
   if (!search) return items;
 
   return items.filter((item) =>
-    [item.cardName, item.setName, item.cardNumber, item.itemNumber, item.rarity, item.art, item.category, item.condition]
+    [item.itemName, item.setName, item.cardNumber, item.itemNumber, item.itemType, item.productCategory, item.rarity, item.art, item.category, item.condition]
+      .filter(Boolean)
       .join(' ')
       .toLowerCase()
       .includes(search)
@@ -170,14 +176,16 @@ export async function saveInventoryItem(orgId: string, userId: string, input: In
 
   if (itemId) {
     const itemNumber = clean.autoGenerateItemNumber
-      ? await generateInventoryItemNumber(orgId, clean.cardNumber, clean.condition)
+      ? await generateInventoryItemNumber(orgId, clean.itemType, itemNumberReference(clean), clean.condition)
       : clean.itemNumber;
     await assertUniqueItemNumber(orgId, itemNumber, itemId);
     const { data, error } = await supabase
       .from('inventory_items')
       .update({
         item_number: itemNumber,
-        card_name: clean.cardName,
+        item_type: clean.itemType,
+        product_category: clean.productCategory,
+        item_name: clean.itemName,
         card_number: clean.cardNumber,
         set_name: clean.setName,
         rarity: clean.rarity,
@@ -223,7 +231,7 @@ export async function saveInventoryItem(orgId: string, userId: string, input: In
   }
 
   const itemNumber = clean.autoGenerateItemNumber
-    ? await generateInventoryItemNumber(orgId, clean.cardNumber, clean.condition)
+    ? await generateInventoryItemNumber(orgId, clean.itemType, itemNumberReference(clean), clean.condition)
     : clean.itemNumber;
   await assertUniqueItemNumber(orgId, itemNumber);
 
@@ -232,7 +240,9 @@ export async function saveInventoryItem(orgId: string, userId: string, input: In
     .insert({
       org_id: orgId,
       item_number: itemNumber,
-      card_name: clean.cardName,
+      item_type: clean.itemType,
+      product_category: clean.productCategory,
+      item_name: clean.itemName,
       card_number: clean.cardNumber,
       set_name: clean.setName,
       rarity: clean.rarity,
@@ -396,14 +406,17 @@ async function findExactInventoryLine(orgId: string, input: InventoryInput) {
     .from('inventory_items')
     .select('*')
     .eq('org_id', orgId)
-    .eq('card_number', input.cardNumber.trim())
-    .eq('set_name', input.setName.trim())
-    .eq('rarity', input.rarity)
-    .eq('art', input.art)
+    .eq('item_type', input.itemType)
+    .eq('item_name', input.itemName.trim())
     .eq('language', input.language)
-    .eq('category', input.category)
     .eq('condition', input.condition.trim());
 
+  query = input.productCategory ? query.eq('product_category', input.productCategory) : query.is('product_category', null);
+  query = input.cardNumber ? query.eq('card_number', input.cardNumber.trim()) : query.is('card_number', null);
+  query = input.setName ? query.eq('set_name', input.setName.trim()) : query.is('set_name', null);
+  query = input.rarity ? query.eq('rarity', input.rarity) : query.is('rarity', null);
+  query = input.art ? query.eq('art', input.art) : query.is('art', null);
+  query = input.category ? query.eq('category', input.category) : query.is('category', null);
   query = input.gradeCompany ? query.eq('grade_company', input.gradeCompany) : query.is('grade_company', null);
   query = input.grade ? query.eq('grade', input.grade) : query.is('grade', null);
 
@@ -412,21 +425,28 @@ async function findExactInventoryLine(orgId: string, input: InventoryInput) {
   return data ? mapInventoryItem(data as InventoryRow) : null;
 }
 
-function normalizeInventoryInput(input: InventoryInput): Required<InventoryInput> {
+function normalizeInventoryInput(input: InventoryInput) {
   const quantity = Math.max(0, Number(input.quantity) || 0);
+  const isCard = input.itemType === 'single_card';
+  const isSealed = input.itemType === 'sealed_product';
+  if (!input.itemName.trim()) throw new Error('Item name is required');
+  if (isCard && (!input.cardNumber?.trim() || !input.setName?.trim())) throw new Error('Card number and set name are required');
+  if (isSealed && !input.productCategory) throw new Error('Sealed product type is required');
   return {
     itemNumber: input.itemNumber?.trim().toUpperCase() || '',
     autoGenerateItemNumber: input.autoGenerateItemNumber ?? true,
-    cardName: input.cardName.trim(),
-    cardNumber: input.cardNumber.trim().toUpperCase(),
-    setName: input.setName.trim(),
-    rarity: input.rarity,
-    art: input.art,
+    itemType: input.itemType,
+    productCategory: isSealed ? input.productCategory || null : null,
+    itemName: input.itemName.trim(),
+    cardNumber: isCard ? input.cardNumber?.trim().toUpperCase() || null : null,
+    setName: isCard ? input.setName?.trim() || null : null,
+    rarity: isCard ? input.rarity || 'C' : null,
+    art: isCard ? input.art || 'Base' : null,
     language: input.language,
-    category: input.category,
-    condition: input.condition.trim() || 'NM',
-    gradeCompany: input.condition === 'GRADED' ? input.gradeCompany?.trim() || null : null,
-    grade: input.condition === 'GRADED' ? input.grade?.trim() || null : null,
+    category: isCard ? input.category || 'Character' : null,
+    condition: input.condition.trim() || (isSealed ? 'SEALED' : input.itemType === 'mystery_pack' ? 'NEW' : 'NM'),
+    gradeCompany: isCard && input.condition === 'GRADED' ? input.gradeCompany?.trim() || null : null,
+    grade: isCard && input.condition === 'GRADED' ? input.grade?.trim() || null : null,
     quantity,
     costBasis: input.costBasis === undefined || input.costBasis === null ? null : Math.max(0, Number(input.costBasis)),
     askingPrice: Math.max(0, Number(input.askingPrice) || 0),
@@ -437,11 +457,17 @@ function normalizeInventoryInput(input: InventoryInput): Required<InventoryInput
   };
 }
 
-export async function generateInventoryItemNumber(orgId: string, cardNumber: string, condition: string) {
-  if (isLocalDemoMode) return generateLocalItemNumber(cardNumber, condition);
+export async function generateInventoryItemNumber(
+  orgId: string,
+  itemType: InventoryItemType,
+  reference: string,
+  condition: string
+) {
+  if (isLocalDemoMode) return generateLocalItemNumber(itemType, reference, condition);
   const { data, error } = await supabase.rpc('generate_item_number', {
     p_org_id: orgId,
-    p_card_number: cardNumber,
+    p_item_type: itemType,
+    p_reference: reference,
     p_condition: condition
   });
   if (error) throw error;
@@ -452,11 +478,17 @@ async function assertUniqueItemNumber(orgId: string, itemNumber: string, exclude
   if (!itemNumber) throw new Error('Item number is required when auto-generation is off');
   let query = supabase
     .from('inventory_items')
-    .select('id, card_name')
+    .select('id, item_name')
     .eq('org_id', orgId)
     .ilike('item_number', itemNumber);
   if (excludeId) query = query.neq('id', excludeId);
   const { data, error } = await query.limit(1).maybeSingle();
   if (error) throw error;
-  if (data) throw new Error(`Item number ${itemNumber} is already recorded for ${data.card_name}`);
+  if (data) throw new Error(`Item number ${itemNumber} is already recorded for ${data.item_name}`);
+}
+
+function itemNumberReference(input: Pick<InventoryInput, 'itemType' | 'cardNumber' | 'productCategory'>) {
+  if (input.itemType === 'single_card') return input.cardNumber || '';
+  if (input.itemType === 'sealed_product') return input.productCategory || 'other_sealed';
+  return 'pack';
 }
