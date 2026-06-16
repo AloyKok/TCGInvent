@@ -36,7 +36,7 @@ const emptyFilters: InventoryFilters = {
 };
 
 const rarityOptions = ['C', 'UC', 'R', 'SR', 'SEC', 'Leader', 'Promo'].map((value) => ({ value, label: value }));
-const artOptions = ['Base', 'Parallel', 'Manga'].map((value) => ({ value, label: value }));
+const artOptions = ['Base', 'Parallel', 'Manga', 'SP'].map((value) => ({ value, label: value }));
 const categoryOptions = ['Character', 'Leader', 'Event', 'Stage', 'DON'].map((value) => ({ value, label: value }));
 const languageOptions = [
   { value: 'EN', label: 'English' },

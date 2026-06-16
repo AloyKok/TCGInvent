@@ -1,7 +1,7 @@
 export type MemberRole = 'owner' | 'admin';
 export type CardLanguage = 'EN' | 'JP' | 'OTHER';
 export type CardRarity = 'C' | 'UC' | 'R' | 'SR' | 'SEC' | 'Leader' | 'Promo';
-export type CardArt = 'Base' | 'Parallel' | 'Manga';
+export type CardArt = 'Base' | 'Parallel' | 'Manga' | 'SP';
 export type CardCategory = 'Character' | 'Leader' | 'Event' | 'Stage' | 'DON';
 export type InventoryItemType = 'single_card' | 'sealed_product' | 'mystery_pack';
 export type SealedProductType = 'booster_box' | 'booster_pack' | 'starter_deck' | 'special_promo_set' | 'collection' | 'other_sealed';

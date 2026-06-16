@@ -18,6 +18,7 @@ export const ONE_PIECE_SET_NAMES = [
   '[EB-01] Extra Booster: Memorial Collection',
   '[EB-02] Extra Booster: Anime 25th Collection',
   '[EB-03] Extra Booster: One Piece Heroines Edition',
+  '[EB-04] EGGHEAD CRISIS',
   '[PRB01] One Piece Card The Best Volumes 1',
   '[PRB02] One Piece Card The Best Volumes 2',
   'ST-01: Straw Hat Crew',
