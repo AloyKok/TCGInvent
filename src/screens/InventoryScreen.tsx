@@ -43,7 +43,7 @@ const languageOptions = [
   { value: 'JP', label: 'Japanese' },
   { value: 'OTHER', label: 'Other' }
 ];
-const conditionOptions = ['NM', 'LP', 'MP', 'HP', 'DMG', 'GRADED'].map((value) => ({ value, label: value }));
+const conditionOptions = ['MINT', 'NM', 'LP', 'MP', 'HP', 'DMG', 'GRADED'].map((value) => ({ value, label: value }));
 const sealedConditionOptions = ['SEALED', 'OPENED', 'DAMAGED'].map((value) => ({ value, label: value }));
 const itemTypeOptions = [
   { value: '', label: 'All item types' },

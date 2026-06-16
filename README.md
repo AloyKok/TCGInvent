@@ -175,7 +175,7 @@ For `sealed_product`, provide `product_category`: `booster_box`, `booster_pack`,
 Recommended One Piece values:
 
 - `language`: `EN`, `JP`, or `OTHER`
-- `condition`: `NM`, `LP`, `MP`, `HP`, `DMG`, or `GRADED`
+- `condition`: `MINT`, `NM`, `LP`, `MP`, `HP`, `DMG`, or `GRADED`
 - `rarity`: `C`, `UC`, `R`, `SR`, `SEC`, `Leader`, or `Promo`
 - `art`: `Base`, `Parallel`, or `Manga`
 - `category`: `Character`, `Leader`, `Event`, `Stage`, or `DON`
