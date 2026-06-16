@@ -48,7 +48,7 @@ export function AuthScreen() {
             />
           </Field>
           {mutation.error && <p className="text-sm text-danger">{mutation.error.message}</p>}
-          <Button disabled={mutation.isPending}>{mutation.isPending ? 'Signing in...' : 'Sign in'}</Button>
+          <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? 'Signing in...' : 'Sign in'}</Button>
         </form>
       </div>
     </div>

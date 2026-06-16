@@ -500,6 +500,7 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
         <div className="sticky bottom-0 flex gap-2 bg-white pt-2">
           <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
           <Button
+            type="submit"
             className="flex-1"
             disabled={
               mutation.isPending ||

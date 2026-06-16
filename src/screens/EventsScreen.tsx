@@ -51,7 +51,7 @@ export function EventsScreen() {
         </div>
         <Field label="Location"><TextInput value={location} onChange={(event) => setLocation(event.target.value)} /></Field>
         {mutation.error && <p className="text-sm text-danger">{mutation.error.message}</p>}
-        <Button disabled={mutation.isPending}>Add event</Button>
+        <Button type="submit" disabled={mutation.isPending}>Add event</Button>
       </form>
       <div className="grid gap-2">
         {(query.data || []).map((event) => (

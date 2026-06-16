@@ -90,7 +90,7 @@ export function SettingsScreen() {
         <Field label="Label preset"><TextInput value={labelSheetPreset} onChange={(event) => setLabelSheetPreset(event.target.value)} disabled={!isOwner} /></Field>
         <Field label="Pricing API key"><TextInput value={pricingApiKey} onChange={(event) => setPricingApiKey(event.target.value)} disabled={!isOwner} /></Field>
         {mutation.error && <p className="text-sm text-danger">{mutation.error.message}</p>}
-        <Button disabled={!isOwner || mutation.isPending}>{mutation.isPending ? 'Saving...' : 'Save settings'}</Button>
+        <Button type="submit" disabled={!isOwner || mutation.isPending}>{mutation.isPending ? 'Saving...' : 'Save settings'}</Button>
       </form>
       {isOwner && (
         <section className="rounded-lg border border-red-200 bg-red-50 p-3">

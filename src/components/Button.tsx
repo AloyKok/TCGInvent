@@ -9,9 +9,10 @@ const variants: Record<Variant, string> = {
   ghost: 'bg-transparent text-slate-700 active:translate-y-px'
 };
 
-export function Button({ className = '', variant = 'primary', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
+export function Button({ className = '', variant = 'primary', type = 'button', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   return (
     <button
+      type={type}
       {...props}
       className={`min-h-11 min-w-0 rounded-md px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`}
     />

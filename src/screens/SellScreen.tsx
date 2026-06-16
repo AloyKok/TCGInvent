@@ -22,6 +22,8 @@ export function SellScreen() {
   const [miscAmount, setMiscAmount] = useState('');
   const [flash, setFlash] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const cart = useCartStore();
+  const cartEventId = cart.eventId;
+  const setCartEventId = useCartStore((state) => state.setEventId);
   const eventsQuery = useQuery({ queryKey: ['events', organization.id], queryFn: () => listEvents(organization.id) });
   const settingsQuery = useQuery({ queryKey: ['settings', organization.id], queryFn: () => getSettings(organization.id) });
   const inventoryQuery = useQuery({
@@ -34,7 +36,7 @@ export function SellScreen() {
   });
   const inventory = useMemo(() => inventoryQuery.data || [], [inventoryQuery.data]);
   const events = useMemo(() => eventsQuery.data || [], [eventsQuery.data]);
-  const selectedEvent = events.find((event) => event.id === cart.eventId);
+  const selectedEvent = events.find((event) => event.id === cartEventId);
   const hasSaleContext = cart.saleMode === 'daily' || (cart.saleMode === 'show' && Boolean(selectedEvent));
   const saleContextLabel = cart.saleMode === 'daily' ? 'Daily sales' : selectedEvent?.name || 'Not selected';
   const subtotal = getCartSubtotal(cart.lines);
@@ -56,10 +58,12 @@ export function SellScreen() {
   }, [organization.id, queryClient]);
 
   useEffect(() => {
-    if (eventsQuery.isSuccess && cart.eventId && !events.some((event) => event.id === cart.eventId)) {
-      cart.setEventId('');
+    const loadedEvents = eventsQuery.data;
+    if (!loadedEvents || !cartEventId) return;
+    if (!loadedEvents.some((event) => event.id === cartEventId)) {
+      setCartEventId('');
     }
-  }, [cart, events, eventsQuery.isSuccess]);
+  }, [cartEventId, eventsQuery.data, setCartEventId]);
 
   const resolveItem = useCallback(async (code: string) => {
     const value = code.trim();
@@ -229,7 +233,7 @@ export function SellScreen() {
                 onChange={(event) => setManual(event.target.value)}
                 disabled={!hasSaleContext}
               />
-              <Button className="grid min-w-11 place-items-center px-3" aria-label="Add manual item" disabled={!hasSaleContext || !manual.trim()}>
+              <Button type="submit" className="grid min-w-11 place-items-center px-3" aria-label="Add manual item" disabled={!hasSaleContext || !manual.trim()}>
                 <Search size={18} />
               </Button>
             </div>
@@ -272,7 +276,7 @@ export function SellScreen() {
               placeholder="Amount"
               disabled={!hasSaleContext}
             />
-            <Button className="min-w-24" disabled={!hasSaleContext || !miscAmount}>Add</Button>
+            <Button type="submit" className="min-w-24" disabled={!hasSaleContext || !miscAmount}>Add</Button>
           </div>
         </form>
       </section>
@@ -304,16 +308,16 @@ export function SellScreen() {
                     )}
                     <p className="text-sm font-semibold">{formatMoney(unitPrice, currencySymbol)}</p>
                   </div>
-                  <button className="grid min-h-11 min-w-11 place-items-center text-danger" onClick={() => cart.removeItem(lineId)} aria-label="Remove">
+                  <button type="button" className="grid min-h-11 min-w-11 place-items-center text-danger" onClick={() => cart.removeItem(lineId)} aria-label="Remove">
                     <Trash2 size={18} />
                   </button>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <button className="grid min-h-11 min-w-11 place-items-center rounded-md border border-line" onClick={() => cart.setQuantity(lineId, line.quantity - 1)} aria-label="Decrease">
+                  <button type="button" className="grid min-h-11 min-w-11 place-items-center rounded-md border border-line" onClick={() => cart.setQuantity(lineId, line.quantity - 1)} aria-label="Decrease">
                     <Minus size={16} />
                   </button>
                   <span className="text-lg font-black">{line.quantity}</span>
-                  <button className="grid min-h-11 min-w-11 place-items-center rounded-md border border-line" onClick={() => cart.setQuantity(lineId, line.quantity + 1)} aria-label="Increase">
+                  <button type="button" className="grid min-h-11 min-w-11 place-items-center rounded-md border border-line" onClick={() => cart.setQuantity(lineId, line.quantity + 1)} aria-label="Increase">
                     <Plus size={16} />
                   </button>
                   <span className="ml-auto font-black">{formatMoney(unitPrice * line.quantity, currencySymbol)}</span>
