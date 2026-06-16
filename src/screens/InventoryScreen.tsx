@@ -291,6 +291,12 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
         aria-modal="true"
         aria-labelledby="inventory-form-title"
         className="grid max-h-dvh min-h-dvh w-full min-w-0 max-w-2xl gap-4 overflow-y-auto overscroll-contain bg-white p-3 shadow-soft sm:min-h-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-lg sm:p-4"
+        onPaste={async (event) => {
+          const file = getClipboardImage(event.clipboardData);
+          if (!file) return;
+          event.preventDefault();
+          await handlePhotoFile(file);
+        }}
         onSubmit={(event) => {
           event.preventDefault();
           if (!selectedType) return;
@@ -458,27 +464,36 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
                 : 'Format: MYSTERY-PACK + sequence.'}
           </p>
         </div>
-        <Field label="Photo">
-          <TextInput
-            type="file"
-            accept="image/*"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              try {
-                setInput({ ...input, imageUrl: await fileToDataUrl(file) });
-              } catch {
-                alert('This photo could not be processed. Try a JPEG or PNG image.');
-              }
-            }}
-          />
-        </Field>
+        <div
+          className="grid gap-3 rounded-md border border-dashed border-line bg-slate-50 p-3"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={async (event) => {
+            event.preventDefault();
+            const file = [...event.dataTransfer.files].find((candidate) => candidate.type.startsWith('image/'));
+            if (file) await handlePhotoFile(file);
+          }}
+        >
+          <Field label="Photo">
+            <TextInput
+              type="file"
+              accept="image/*"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                await handlePhotoFile(file);
+              }}
+            />
+          </Field>
+          <p className="text-xs font-semibold text-slate-500">Paste, drop, or upload a photo. Black outer margins are trimmed automatically.</p>
+        </div>
         {input.imageUrl && (
-          <img
-            src={input.imageUrl}
-            alt="Item preview"
-            className="h-auto max-h-[65dvh] w-full rounded-md border border-line bg-slate-50 object-contain"
-          />
+          <div className="grid place-items-center rounded-md border border-line bg-slate-950 p-3">
+            <img
+              src={input.imageUrl}
+              alt="Item preview"
+              className="max-h-[65dvh] w-auto max-w-full rounded bg-white object-contain"
+            />
+          </div>
         )}
         <Field label="Notes"><TextArea value={input.notes || ''} onChange={(e) => setInput({ ...input, notes: e.target.value })} /></Field>
         {mutation.error && <p className="text-sm text-danger">{mutation.error.message}</p>}
@@ -516,6 +531,15 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
       condition: itemType === 'single_card' ? 'NM' : itemType === 'sealed_product' ? 'SEALED' : 'NEW'
     }));
   }
+
+  async function handlePhotoFile(file: File) {
+    try {
+      const imageUrl = await fileToDataUrl(file);
+      setInput((current) => ({ ...current, imageUrl }));
+    } catch {
+      alert('This photo could not be processed. Try a JPEG, PNG, or WebP image.');
+    }
+  }
 }
 
 function ItemTypeChoice({
@@ -548,12 +572,66 @@ async function fileToDataUrl(file: File) {
   const bitmap = await createImageBitmap(file);
   const maxSide = 1200;
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const source = document.createElement('canvas');
+  source.width = Math.max(1, Math.round(bitmap.width * scale));
+  source.height = Math.max(1, Math.round(bitmap.height * scale));
+  const sourceContext = source.getContext('2d', { willReadFrequently: true });
+  if (!sourceContext) throw new Error('Unable to process image');
+  sourceContext.drawImage(bitmap, 0, 0, source.width, source.height);
+  bitmap.close();
+
+  const crop = getContentCrop(sourceContext, source.width, source.height);
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.width = crop.width;
+  canvas.height = crop.height;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Unable to process image');
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
+  context.drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
   return canvas.toDataURL('image/jpeg', 0.82);
+}
+
+function getClipboardImage(data: DataTransfer) {
+  const file = [...data.files].find((candidate) => candidate.type.startsWith('image/'));
+  if (file) return file;
+  return [...data.items]
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .find((candidate): candidate is File => Boolean(candidate)) || null;
+}
+
+function getContentCrop(context: CanvasRenderingContext2D, width: number, height: number) {
+  const data = context.getImageData(0, 0, width, height).data;
+  let left = width;
+  let top = height;
+  let right = -1;
+  let bottom = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const alpha = data[index + 3];
+      const red = data[index];
+      const green = data[index + 1];
+      const blue = data[index + 2];
+      if (alpha > 20 && (red > 24 || green > 24 || blue > 24)) {
+        left = Math.min(left, x);
+        top = Math.min(top, y);
+        right = Math.max(right, x);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+
+  if (right < left || bottom < top) return { x: 0, y: 0, width, height };
+
+  const padding = Math.round(Math.min(width, height) * 0.015);
+  const x = Math.max(0, left - padding);
+  const y = Math.max(0, top - padding);
+  const cropRight = Math.min(width - 1, right + padding);
+  const cropBottom = Math.min(height - 1, bottom + padding);
+  const cropWidth = cropRight - x + 1;
+  const cropHeight = cropBottom - y + 1;
+
+  if (cropWidth > width * 0.96 && cropHeight > height * 0.96) return { x: 0, y: 0, width, height };
+  return { x, y, width: cropWidth, height: cropHeight };
 }
