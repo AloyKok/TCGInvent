@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CreditCard, Edit3, Package, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { CreditCard, Edit3, ExternalLink, Package, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/Button';
 import { Field, SelectInput, TextArea, TextInput } from '../components/Field';
-import { deleteInventoryItem, generateInventoryItemNumber, getSettings, listInventory, saveInventoryItem, type InventoryInput } from '../lib/supabase/api';
+import {
+  deleteInventoryItem,
+  generateInventoryItemNumber,
+  getSettings,
+  listInventory,
+  saveInventoryItem,
+  saveMarketMapping,
+  saveMarketSnapshot,
+  searchYuyuteiMarket,
+  type InventoryInput
+} from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
 import { useAuth } from '../lib/supabase/AuthProvider';
 import { formatMoney } from '../lib/format/money';
@@ -16,6 +26,7 @@ import type {
   InventoryFilters,
   InventoryItem,
   InventoryItemType,
+  YuyuteiMarketCandidate,
   SealedProductType
 } from '../types/domain';
 import { cacheInventory } from '../lib/queue/offlineQueue';
@@ -213,7 +224,11 @@ export function InventoryScreen() {
 function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null; onClose: () => void; onSaved: () => void }) {
   const { organization } = useOrg();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [selectedType, setSelectedType] = useState<InventoryItemType | null>(item?.itemType || null);
+  const [savedItem, setSavedItem] = useState<InventoryItem | null>(null);
+  const [marketCandidates, setMarketCandidates] = useState<YuyuteiMarketCandidate[]>([]);
+  const [marketLinked, setMarketLinked] = useState(false);
   const [input, setInput] = useState<InventoryInput>({
     itemNumber: item?.itemNumber || '',
     autoGenerateItemNumber: !item,
@@ -281,7 +296,33 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
       if (!user) throw new Error('Not signed in');
       return saveInventoryItem(organization.id, user.id, input, item?.id);
     },
-    onSuccess: onSaved
+    onSuccess: async (saved) => {
+      await queryClient.invalidateQueries({ queryKey: ['inventory', organization.id] });
+      if (saved.itemType === 'single_card' && saved.cardNumber) {
+        setSavedItem(saved);
+        setMarketLinked(false);
+        setMarketCandidates([]);
+        marketSearchMutation.mutate(saved);
+        return;
+      }
+      onSaved();
+    }
+  });
+  const marketSearchMutation = useMutation({
+    mutationFn: (saved: InventoryItem) => searchYuyuteiMarket(saved),
+    onSuccess: (rows) => setMarketCandidates(rows)
+  });
+  const marketLinkMutation = useMutation({
+    mutationFn: async ({ saved, candidate }: { saved: InventoryItem; candidate: YuyuteiMarketCandidate }) => {
+      await saveMarketMapping(organization.id, saved.id, candidate);
+      await saveMarketSnapshot(organization.id, saved.id, candidate);
+      return candidate;
+    },
+    onSuccess: async () => {
+      setMarketLinked(true);
+      await queryClient.invalidateQueries({ queryKey: ['market-mappings', organization.id] });
+      await queryClient.invalidateQueries({ queryKey: ['market-snapshots', organization.id] });
+    }
   });
 
   return (
@@ -495,22 +536,39 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
             />
           </div>
         )}
+        {savedItem && (
+          <MarketLinkPanel
+            item={savedItem}
+            candidates={marketCandidates}
+            linked={marketLinked}
+            isSearching={marketSearchMutation.isPending}
+            isLinking={marketLinkMutation.isPending}
+            searchError={marketSearchMutation.error}
+            linkError={marketLinkMutation.error}
+            onRefresh={() => marketSearchMutation.mutate(savedItem)}
+            onLink={(candidate) => marketLinkMutation.mutate({ saved: savedItem, candidate })}
+          />
+        )}
         <Field label="Notes"><TextArea value={input.notes || ''} onChange={(e) => setInput({ ...input, notes: e.target.value })} /></Field>
         {mutation.error && <p className="text-sm text-danger">{mutation.error.message}</p>}
         <div className="sticky bottom-0 flex gap-2 bg-white pt-2">
           <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            className="flex-1"
-            disabled={
-              mutation.isPending ||
-              !input.itemName.trim() ||
-              (selectedType === 'single_card' && (!input.setName || !input.cardNumber)) ||
-              (selectedType === 'sealed_product' && !input.productCategory)
-            }
-          >
-            {mutation.isPending ? 'Saving...' : 'Save'}
-          </Button>
+          {savedItem ? (
+            <Button type="button" className="flex-1" onClick={onSaved}>Done</Button>
+          ) : (
+            <Button
+              type="submit"
+              className="flex-1"
+              disabled={
+                mutation.isPending ||
+                !input.itemName.trim() ||
+                (selectedType === 'single_card' && (!input.setName || !input.cardNumber)) ||
+                (selectedType === 'sealed_product' && !input.productCategory)
+              }
+            >
+              {mutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+          )}
         </div>
           </>
         )}
@@ -566,6 +624,80 @@ function ItemTypeChoice({
         <span className="mt-1 block text-sm text-slate-600">{description}</span>
       </span>
     </button>
+  );
+}
+
+function MarketLinkPanel({
+  item,
+  candidates,
+  linked,
+  isSearching,
+  isLinking,
+  searchError,
+  linkError,
+  onRefresh,
+  onLink
+}: {
+  item: InventoryItem;
+  candidates: YuyuteiMarketCandidate[];
+  linked: boolean;
+  isSearching: boolean;
+  isLinking: boolean;
+  searchError: Error | null;
+  linkError: Error | null;
+  onRefresh: () => void;
+  onLink: (candidate: YuyuteiMarketCandidate) => void;
+}) {
+  return (
+    <section className="grid gap-3 rounded-lg border border-action/30 bg-sky-50 p-3">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-black text-action">Track market now</p>
+          <p className="mt-1 break-words text-sm font-semibold text-slate-600">
+            Saved {item.itemName}. Link the matching Yuyutei result to start tracking prices.
+          </p>
+        </div>
+        <Button type="button" variant="secondary" className="shrink-0 px-3" onClick={onRefresh} disabled={isSearching}>
+          <RefreshCcw size={16} />
+        </Button>
+      </div>
+
+      {linked && (
+        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
+          Market link saved and first price snapshot recorded.
+        </p>
+      )}
+      {isSearching && <p className="text-sm font-semibold text-slate-600">Searching Yuyutei...</p>}
+      {searchError && <p className="text-sm font-bold text-danger">{searchError.message}</p>}
+      {linkError && <p className="text-sm font-bold text-danger">{linkError.message}</p>}
+
+      <div className="grid gap-2">
+        {!isSearching && candidates.length === 0 && (
+          <p className="rounded-md border border-line bg-white px-3 py-2 text-sm font-semibold text-slate-600">
+            No Yuyutei result loaded. You can tap refresh or finish and link later from More / Market.
+          </p>
+        )}
+        {candidates.map((candidate) => (
+          <button
+            key={`${candidate.mode}-${candidate.sourceUrl}`}
+            type="button"
+            className="grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border border-line bg-white p-3 text-left text-sm shadow-sm disabled:opacity-60"
+            disabled={isLinking}
+            onClick={() => onLink(candidate)}
+          >
+            <span className="min-w-0">
+              <strong className="block break-words">
+                {candidate.mode === 'sell' ? 'Sale' : 'Buylist'} / {candidate.displayName}
+              </strong>
+              <span className="mt-1 flex min-w-0 items-center gap-1 break-all text-xs font-semibold text-slate-600">
+                <ExternalLink size={13} className="shrink-0" /> {candidate.cardNumber} / {candidate.sourceUrl}
+              </span>
+            </span>
+            <strong className="text-right">{formatJpy(candidate.price)}</strong>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -635,4 +767,8 @@ function getContentCrop(context: CanvasRenderingContext2D, width: number, height
 
   if (cropWidth > width * 0.96 && cropHeight > height * 0.96) return { x: 0, y: 0, width, height };
   return { x, y, width: cropWidth, height: cropHeight };
+}
+
+function formatJpy(value: number) {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value);
 }
