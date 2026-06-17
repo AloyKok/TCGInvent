@@ -15,6 +15,7 @@ import { ImportExportScreen } from './screens/ImportExportScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { UsersScreen } from './screens/UsersScreen';
 import { EventsScreen } from './screens/EventsScreen';
+import { MarketScreen } from './screens/MarketScreen';
 import { Button } from './components/Button';
 import { Field, TextInput } from './components/Field';
 import { useState } from 'react';
@@ -54,6 +55,7 @@ function ProtectedApp() {
           <Route path="settings" element={<SettingsScreen />} />
           <Route path="users" element={<UsersScreen />} />
           <Route path="events" element={<EventsScreen />} />
+          <Route path="market" element={<MarketScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

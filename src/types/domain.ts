@@ -8,6 +8,7 @@ export type SealedProductType = 'booster_box' | 'booster_pack' | 'starter_deck' 
 export type InventoryStatus = 'in_stock' | 'sold_out' | 'reserved';
 export type PaymentMethod = 'cash' | 'card' | 'other';
 export type TransactionStatus = 'completed' | 'voided';
+export type MarketSource = 'yuyutei';
 
 export interface Organization {
   id: string;
@@ -166,4 +167,45 @@ export interface InventoryFilters {
   condition: string;
   status: string;
   lowStockOnly: boolean;
+}
+
+export interface MarketMapping {
+  id: string;
+  orgId: string;
+  inventoryItemId: string;
+  source: MarketSource;
+  sourceUrl: string;
+  externalId?: string | null;
+  displayName?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MarketPriceSnapshot {
+  id: string;
+  orgId: string;
+  inventoryItemId: string;
+  source: MarketSource;
+  sourceUrl: string;
+  price: number;
+  currency: string;
+  availability?: string | null;
+  fetchedAt: string;
+  raw: Record<string, unknown>;
+}
+
+export interface YuyuteiMarketCandidate {
+  source: 'yuyutei';
+  mode: 'sell' | 'buy';
+  sourceUrl: string;
+  externalId?: string | null;
+  cardNumber?: string | null;
+  rarity?: string | null;
+  name: string;
+  displayName: string;
+  price: number;
+  currency: 'JPY';
+  availability?: string | null;
+  imageUrl?: string | null;
 }

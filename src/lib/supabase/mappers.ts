@@ -1,5 +1,5 @@
 import type { Database } from '../../types/database';
-import type { InventoryItem, Membership, Organization, Settings, ShowEvent, Transaction } from '../../types/domain';
+import type { InventoryItem, MarketMapping, MarketPriceSnapshot, Membership, Organization, Settings, ShowEvent, Transaction } from '../../types/domain';
 
 type Tables = Database['public']['Tables'];
 
@@ -107,4 +107,38 @@ export function mapShowEvent(row: Tables['show_events']['Row']): ShowEvent {
     endDate: row.end_date,
     location: row.location
   };
+}
+
+export function mapMarketMapping(row: Tables['market_mappings']['Row']): MarketMapping {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    inventoryItemId: row.inventory_item_id,
+    source: row.source,
+    sourceUrl: row.source_url,
+    externalId: row.external_id,
+    displayName: row.display_name,
+    metadata: isRecord(row.metadata) ? row.metadata : {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+export function mapMarketPriceSnapshot(row: Tables['market_price_snapshots']['Row']): MarketPriceSnapshot {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    inventoryItemId: row.inventory_item_id,
+    source: row.source,
+    sourceUrl: row.source_url,
+    price: Number(row.price),
+    currency: row.currency,
+    availability: row.availability,
+    fetchedAt: row.fetched_at,
+    raw: isRecord(row.raw) ? row.raw : {}
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

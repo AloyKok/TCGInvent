@@ -5,6 +5,7 @@ import type {
   CardRarity,
   InventoryItemType,
   InventoryStatus,
+  MarketSource,
   MemberRole,
   PaymentMethod,
   SealedProductType,
@@ -206,6 +207,62 @@ export interface Database {
           aging_threshold_days?: number;
           updated_at?: string;
         };
+        Relationships: [];
+      };
+      market_mappings: {
+        Row: {
+          id: string;
+          org_id: string;
+          inventory_item_id: string;
+          source: MarketSource;
+          source_url: string;
+          external_id: string | null;
+          display_name: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          inventory_item_id: string;
+          source: MarketSource;
+          source_url: string;
+          external_id?: string | null;
+          display_name?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['market_mappings']['Row']>;
+        Relationships: [];
+      };
+      market_price_snapshots: {
+        Row: {
+          id: string;
+          org_id: string;
+          inventory_item_id: string;
+          source: MarketSource;
+          source_url: string;
+          price: number;
+          currency: string;
+          availability: string | null;
+          fetched_at: string;
+          raw: Json;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          inventory_item_id: string;
+          source: MarketSource;
+          source_url: string;
+          price: number;
+          currency?: string;
+          availability?: string | null;
+          fetched_at?: string;
+          raw?: Json;
+        };
+        Update: Partial<Database['public']['Tables']['market_price_snapshots']['Row']>;
         Relationships: [];
       };
     };

@@ -2,6 +2,8 @@ import type { User } from '@supabase/supabase-js';
 import { isLocalDemoMode, supabase } from './client';
 import {
   mapInventoryItem,
+  mapMarketMapping,
+  mapMarketPriceSnapshot,
   mapMembership,
   mapOrganization,
   mapSettings,
@@ -17,11 +19,14 @@ import type {
   InventoryItem,
   InventoryItemType,
   InventoryStatus,
+  MarketMapping,
+  MarketPriceSnapshot,
   MemberRole,
   QueuedSale,
   SealedProductType,
   Settings,
-  ShowEvent
+  ShowEvent,
+  YuyuteiMarketCandidate
 } from '../../types/domain';
 import type { Database } from '../../types/database';
 import {
@@ -437,6 +442,81 @@ export async function removeMembership(orgId: string, membershipId: string) {
   if (error) throw error;
 }
 
+export async function listMarketMappings(orgId: string) {
+  if (isLocalDemoMode) return getLocalMarketMappings();
+  const { data, error } = await supabase
+    .from('market_mappings')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(mapMarketMapping);
+}
+
+export async function listMarketPriceSnapshots(orgId: string, limit = 1000) {
+  if (isLocalDemoMode) return getLocalMarketSnapshots();
+  const { data, error } = await supabase
+    .from('market_price_snapshots')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('fetched_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data || []).map(mapMarketPriceSnapshot);
+}
+
+export async function searchYuyuteiMarket(item: InventoryItem) {
+  const cardNumber = item.cardNumber?.trim();
+  if (!cardNumber) throw new Error('Yuyutei search needs a card number');
+  const data = await invokeYuyuteiMarket<{ candidates: YuyuteiMarketCandidate[] }>({ action: 'search', cardNumber });
+  return data.candidates || [];
+}
+
+export async function refreshYuyuteiMarket(sourceUrl: string) {
+  const data = await invokeYuyuteiMarket<{ result: YuyuteiMarketCandidate }>({ action: 'refresh', sourceUrl });
+  if (!data.result) throw new Error('Yuyutei did not return a price');
+  return data.result;
+}
+
+export async function saveMarketMapping(orgId: string, inventoryItemId: string, candidate: YuyuteiMarketCandidate) {
+  if (isLocalDemoMode) return saveLocalMarketMapping(orgId, inventoryItemId, candidate);
+  const { data, error } = await supabase
+    .from('market_mappings')
+    .upsert({
+      org_id: orgId,
+      inventory_item_id: inventoryItemId,
+      source: 'yuyutei',
+      source_url: candidate.sourceUrl,
+      external_id: candidate.externalId || null,
+      display_name: candidate.displayName,
+      metadata: candidate as unknown as Database['public']['Tables']['market_mappings']['Insert']['metadata']
+    }, { onConflict: 'org_id,inventory_item_id,source' })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapMarketMapping(data);
+}
+
+export async function saveMarketSnapshot(orgId: string, inventoryItemId: string, candidate: YuyuteiMarketCandidate) {
+  if (isLocalDemoMode) return saveLocalMarketSnapshot(orgId, inventoryItemId, candidate);
+  const { data, error } = await supabase
+    .from('market_price_snapshots')
+    .insert({
+      org_id: orgId,
+      inventory_item_id: inventoryItemId,
+      source: 'yuyutei',
+      source_url: candidate.sourceUrl,
+      price: candidate.price,
+      currency: candidate.currency,
+      availability: candidate.availability || null,
+      raw: candidate as unknown as Database['public']['Tables']['market_price_snapshots']['Insert']['raw']
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapMarketPriceSnapshot(data);
+}
+
 async function findExactInventoryLine(orgId: string, input: InventoryInput) {
   let query = supabase
     .from('inventory_items')
@@ -531,8 +611,91 @@ async function assertUniqueItemNumber(orgId: string, itemNumber: string, exclude
   if (data) throw new Error(`Item number ${itemNumber} is already recorded for ${data.item_name}`);
 }
 
+async function invokeYuyuteiMarket<T>(body: { action: 'search'; cardNumber: string } | { action: 'refresh'; sourceUrl: string }) {
+  try {
+    const response = await fetch('/api/yuyutei-market', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (response.ok) return await response.json() as T;
+    if (response.status !== 404) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || 'Yuyutei request failed');
+    }
+  } catch (error) {
+    if (isLocalDemoMode) throw error;
+  }
+
+  const { data, error } = await supabase.functions.invoke<T>('yuyutei-market', { body });
+  if (error) throw error;
+  if (!data) throw new Error('Yuyutei request failed');
+  return data;
+}
+
 function itemNumberReference(input: Pick<InventoryInput, 'itemType' | 'cardNumber' | 'productCategory'>) {
   if (input.itemType === 'single_card') return input.cardNumber || '';
   if (input.itemType === 'sealed_product') return input.productCategory || 'other_sealed';
   return 'pack';
+}
+
+const LOCAL_MARKET_MAPPINGS_KEY = 'cardpulse-market-mappings';
+const LOCAL_MARKET_SNAPSHOTS_KEY = 'cardpulse-market-snapshots';
+
+function getLocalMarketMappings(): MarketMapping[] {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_MARKET_MAPPINGS_KEY) || '[]') as MarketMapping[];
+  } catch {
+    return [];
+  }
+}
+
+function getLocalMarketSnapshots(): MarketPriceSnapshot[] {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_MARKET_SNAPSHOTS_KEY) || '[]') as MarketPriceSnapshot[];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalMarketMapping(orgId: string, inventoryItemId: string, candidate: YuyuteiMarketCandidate) {
+  const now = new Date().toISOString();
+  const rows = getLocalMarketMappings();
+  const existingIndex = rows.findIndex((row) => row.orgId === orgId && row.inventoryItemId === inventoryItemId && row.source === 'yuyutei');
+  const row: MarketMapping = {
+    id: existingIndex >= 0 ? rows[existingIndex].id : crypto.randomUUID(),
+    orgId,
+    inventoryItemId,
+    source: 'yuyutei',
+    sourceUrl: candidate.sourceUrl,
+    externalId: candidate.externalId || null,
+    displayName: candidate.displayName,
+    metadata: candidate as unknown as Record<string, unknown>,
+    createdAt: existingIndex >= 0 ? rows[existingIndex].createdAt : now,
+    updatedAt: now
+  };
+  if (existingIndex >= 0) rows[existingIndex] = row;
+  else rows.unshift(row);
+  localStorage.setItem(LOCAL_MARKET_MAPPINGS_KEY, JSON.stringify(rows));
+  window.dispatchEvent(new Event('cardpulse-local-change'));
+  return row;
+}
+
+function saveLocalMarketSnapshot(orgId: string, inventoryItemId: string, candidate: YuyuteiMarketCandidate) {
+  const row: MarketPriceSnapshot = {
+    id: crypto.randomUUID(),
+    orgId,
+    inventoryItemId,
+    source: 'yuyutei',
+    sourceUrl: candidate.sourceUrl,
+    price: candidate.price,
+    currency: candidate.currency,
+    availability: candidate.availability || null,
+    fetchedAt: new Date().toISOString(),
+    raw: candidate as unknown as Record<string, unknown>
+  };
+  const rows = [row, ...getLocalMarketSnapshots()].slice(0, 1000);
+  localStorage.setItem(LOCAL_MARKET_SNAPSHOTS_KEY, JSON.stringify(rows));
+  window.dispatchEvent(new Event('cardpulse-local-change'));
+  return row;
 }

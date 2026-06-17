@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { handleYuyuteiMarket } from './api/yuyuteiMarketCore';
 
 export default defineConfig({
   base: '/admin/',
@@ -8,6 +9,37 @@ export default defineConfig({
     outDir: 'dist/admin'
   },
   plugins: [
+    {
+      name: 'cardpulse-yuyutei-local-api',
+      configureServer(server) {
+        server.middlewares.use('/api/yuyutei-market', async (request, response) => {
+          response.setHeader('Access-Control-Allow-Origin', '*');
+          response.setHeader('Access-Control-Allow-Headers', 'content-type');
+          response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+          if (request.method === 'OPTIONS') {
+            response.statusCode = 200;
+            response.end();
+            return;
+          }
+          if (request.method !== 'POST') {
+            response.statusCode = 405;
+            response.end(JSON.stringify({ error: 'method not allowed' }));
+            return;
+          }
+          try {
+            const body = await readJsonBody(request);
+            const result = await handleYuyuteiMarket(body);
+            response.statusCode = result.status;
+            response.setHeader('content-type', 'application/json');
+            response.end(JSON.stringify(result.body));
+          } catch (error) {
+            response.statusCode = 500;
+            response.setHeader('content-type', 'application/json');
+            response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Yuyutei fetch failed' }));
+          }
+        });
+      }
+    },
     react(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -38,3 +70,20 @@ export default defineConfig({
     })
   ]
 });
+
+function readJsonBody(request: NodeJS.ReadableStream) {
+  return new Promise<{ action?: string; cardNumber?: string; sourceUrl?: string }>((resolve, reject) => {
+    let body = '';
+    request.on('data', (chunk) => {
+      body += chunk;
+    });
+    request.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.on('error', reject);
+  });
+}

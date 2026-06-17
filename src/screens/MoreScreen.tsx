@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom';
-import { CalendarDays, Download, Settings, Tags, Users } from 'lucide-react';
+import { CalendarDays, Download, Settings, Tags, TrendingUp, Users } from 'lucide-react';
 import { signOut } from '../lib/supabase/api';
 import { isLocalDemoMode } from '../lib/supabase/client';
 
 const links = [
   { to: '/labels', label: 'Labels', icon: Tags },
+  { to: '/market', label: 'Market', icon: TrendingUp },
   { to: '/events', label: 'Events', icon: CalendarDays },
   { to: '/import-export', label: 'Import / Export', icon: Download },
   { to: '/users', label: 'Users', icon: Users },

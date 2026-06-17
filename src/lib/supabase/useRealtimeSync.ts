@@ -13,6 +13,8 @@ export function useRealtimeSync(orgId: string) {
         queryClient.invalidateQueries({ queryKey: ['history', orgId] });
         queryClient.invalidateQueries({ queryKey: ['events', orgId] });
         queryClient.invalidateQueries({ queryKey: ['settings', orgId] });
+        queryClient.invalidateQueries({ queryKey: ['market-mappings', orgId] });
+        queryClient.invalidateQueries({ queryKey: ['market-snapshots', orgId] });
         queryClient.invalidateQueries({ queryKey: ['memberships'] });
       };
       window.addEventListener('cardpulse-local-change', refresh);
@@ -37,6 +39,12 @@ export function useRealtimeSync(orgId: string) {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: `org_id=eq.${orgId}` }, () => {
         queryClient.invalidateQueries({ queryKey: ['settings', orgId] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'market_mappings', filter: `org_id=eq.${orgId}` }, () => {
+        queryClient.invalidateQueries({ queryKey: ['market-mappings', orgId] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'market_price_snapshots', filter: `org_id=eq.${orgId}` }, () => {
+        queryClient.invalidateQueries({ queryKey: ['market-snapshots', orgId] });
       })
       .subscribe();
 
