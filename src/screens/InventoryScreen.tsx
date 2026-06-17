@@ -450,35 +450,6 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
           <Field label="Cost"><TextInput type="number" min={0} step="0.01" value={input.costBasis ?? ''} onChange={(e) => setInput({ ...input, costBasis: e.target.value ? Number(e.target.value) : null })} /></Field>
           <Field label="Asking price"><TextInput type="number" min={0} step="0.01" value={input.askingPrice} onChange={(e) => setInput({ ...input, askingPrice: Number(e.target.value) })} required /></Field>
         </div>
-        <div className="grid gap-3 rounded-md border border-line bg-slate-50 p-3">
-          <p className="text-sm font-black">Optional sale controls</p>
-          <div className="grid gap-3 min-[380px]:grid-cols-2">
-            <Field label="Floor price"><TextInput type="number" min={0} step="0.01" value={input.floorPrice ?? ''} onChange={(e) => setInput({ ...input, floorPrice: e.target.value ? Number(e.target.value) : null })} /></Field>
-            <Field label="Location"><TextInput value={input.location || ''} onChange={(e) => setInput({ ...input, location: e.target.value })} placeholder="Binder A / page 4 / slot 2" /></Field>
-          </div>
-          <label className="flex min-h-11 items-center gap-3 text-sm font-semibold">
-            <input
-              type="checkbox"
-              checked={Boolean(input.listedOnline)}
-              onChange={(e) => setInput({ ...input, listedOnline: e.target.checked })}
-            />
-            Listed online
-          </label>
-        </div>
-        <div className="grid gap-3 rounded-md border border-line bg-slate-50 p-3">
-          <p className="text-sm font-black">Optional acquisition details</p>
-          <div className="grid gap-3 min-[380px]:grid-cols-2">
-            <Field label="Acquisition source"><TextInput value={input.acquisitionSource || ''} onChange={(e) => setInput({ ...input, acquisitionSource: e.target.value })} placeholder="Vendor, trade, collection" /></Field>
-            <Field label="Acquisition date"><TextInput type="date" value={input.acquisitionDate || ''} onChange={(e) => setInput({ ...input, acquisitionDate: e.target.value })} /></Field>
-          </div>
-          <Field label="Tags">
-            <TextInput
-              value={(input.tags || []).join(', ')}
-              onChange={(e) => setInput({ ...input, tags: e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })}
-              placeholder="hot, showcase, discount"
-            />
-          </Field>
-        </div>
         <div className="rounded-md border border-line p-3">
           <label className="flex min-h-11 items-center gap-3 text-sm font-semibold">
             <input
