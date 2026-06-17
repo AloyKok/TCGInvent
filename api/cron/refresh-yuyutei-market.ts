@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { handleYuyuteiMarket, type YuyuteiMarketCandidate } from '../yuyuteiMarketCore';
-import type { Database } from '../../src/types/database';
+import { handleYuyuteiMarket, type YuyuteiMarketCandidate } from '../yuyuteiMarketCore.js';
+import type { Database } from '../../src/types/database.js';
 
 export const config = {
   maxDuration: 60

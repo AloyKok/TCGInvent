@@ -1,4 +1,4 @@
-import { handleYuyuteiMarket } from './yuyuteiMarketCore';
+import { handleYuyuteiMarket } from './yuyuteiMarketCore.js';
 
 export default async function handler(request: { method?: string; body?: unknown }, response: {
   status: (code: number) => { json: (body: unknown) => void; end: () => void };
