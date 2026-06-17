@@ -625,18 +625,12 @@ async function invokeYuyuteiMarket<T>(body: { action: 'search'; cardNumber: stri
       body: JSON.stringify(body)
     });
     if (response.ok) return await response.json() as T;
-    if (response.status !== 404) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(payload?.error || 'Yuyutei request failed');
-    }
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error || 'Yuyutei request failed');
   } catch (error) {
-    if (isLocalDemoMode) throw error;
+    if (error instanceof Error) throw error;
+    throw new Error('Yuyutei request failed');
   }
-
-  const { data, error } = await supabase.functions.invoke<T>('yuyutei-market', { body });
-  if (error) throw error;
-  if (!data) throw new Error('Yuyutei request failed');
-  return data;
 }
 
 function itemNumberReference(input: Pick<InventoryInput, 'itemType' | 'cardNumber' | 'productCategory'>) {
