@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { handleYuyuteiMarket } from './api/yuyuteiMarketCore';
+import refreshYuyuteiMarketCron from './api/cron/refresh-yuyutei-market';
 
 export default defineConfig({
   base: '/admin/',
@@ -36,6 +37,27 @@ export default defineConfig({
             response.statusCode = 500;
             response.setHeader('content-type', 'application/json');
             response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Yuyutei fetch failed' }));
+          }
+        });
+        server.middlewares.use('/api/cron/refresh-yuyutei-market', async (request, response) => {
+          try {
+            await refreshYuyuteiMarketCron(
+              { method: request.method, headers: request.headers },
+              {
+                status: (code) => {
+                  response.statusCode = code;
+                  response.setHeader('content-type', 'application/json');
+                  return {
+                    json: (body: unknown) => response.end(JSON.stringify(body)),
+                    end: () => response.end()
+                  };
+                }
+              }
+            );
+          } catch (error) {
+            response.statusCode = 500;
+            response.setHeader('content-type', 'application/json');
+            response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Cron failed' }));
           }
         });
       }

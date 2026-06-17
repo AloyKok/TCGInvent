@@ -9,5 +9,5 @@
     "noEmit": true,
     "strict": true
   },
-  "include": ["vite.config.ts", "postcss.config.js", "tailwind.config.js", "eslint.config.js", "api"]
+  "include": ["vite.config.ts", "postcss.config.js", "tailwind.config.js", "eslint.config.js", "api", "src/types"]
 }

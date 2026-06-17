@@ -70,7 +70,22 @@ Local mode is for product testing only. It does not provide secure multi-user ac
    npm run dev
    ```
 
-Only the Supabase anon key belongs in the frontend. Never add a service-role key to `.env`, source files, Vercel, Netlify, or Cloudflare Pages frontend variables.
+Only the Supabase anon key belongs in the frontend. Never prefix a service-role key with `VITE_`, and never add it to source files or frontend environment variables.
+
+For the daily Yuyutei market refresh cron on Vercel, configure these server-only
+environment variables in the Vercel project:
+
+```text
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
+CRON_SECRET=replace-with-a-long-random-string
+MARKET_REFRESH_LIMIT=150
+MARKET_REFRESH_CONCURRENCY=2
+```
+
+The cron is defined in `vercel.json` as `0 13 * * *`, which runs at 9:00pm
+Singapore time. It refreshes linked Yuyutei cards and writes new
+`market_price_snapshots`; Inventory displays the latest saved snapshot.
 
 ## Accounts
 
@@ -225,6 +240,10 @@ Configure only:
 VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
 ```
+
+If deploying to Vercel and using daily market refresh, also configure the
+server-only variables listed in Local Setup. Do not expose
+`SUPABASE_SERVICE_ROLE_KEY` to the browser.
 
 On a phone, open the deployed URL and use the browser's "Add to Home Screen" install action.
 

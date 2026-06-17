@@ -8,6 +8,12 @@
       "permanent": false
     }
   ],
+  "crons": [
+    {
+      "path": "/api/cron/refresh-yuyutei-market",
+      "schedule": "0 13 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/admin",
