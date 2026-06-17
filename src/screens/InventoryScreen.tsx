@@ -9,6 +9,7 @@ import {
   generateInventoryItemNumber,
   getSettings,
   listInventory,
+  listMarketPriceSnapshots,
   saveInventoryItem,
   saveMarketMapping,
   saveMarketSnapshot,
@@ -26,6 +27,7 @@ import type {
   InventoryFilters,
   InventoryItem,
   InventoryItemType,
+  MarketPriceSnapshot,
   YuyuteiMarketCandidate,
   SealedProductType
 } from '../types/domain';
@@ -71,6 +73,7 @@ export function InventoryScreen() {
   const [formOpen, setFormOpen] = useState(false);
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({ queryKey: ['settings', organization.id], queryFn: () => getSettings(organization.id) });
+  const marketSnapshotsQuery = useQuery({ queryKey: ['market-snapshots', organization.id], queryFn: () => listMarketPriceSnapshots(organization.id) });
   const query = useQuery({
     queryKey: ['inventory', organization.id, filters],
     queryFn: async () => {
@@ -99,6 +102,13 @@ export function InventoryScreen() {
     sets: [...new Set(items.map((item) => item.setName).filter((value): value is string => Boolean(value)))].sort(),
     conditions: [...new Set(items.map((item) => item.condition))].sort()
   }), [items]);
+  const latestMarketByItem = useMemo(() => {
+    const map = new Map<string, MarketPriceSnapshot>();
+    (marketSnapshotsQuery.data || []).forEach((snapshot) => {
+      if (!map.has(snapshot.inventoryItemId)) map.set(snapshot.inventoryItemId, snapshot);
+    });
+    return map;
+  }, [marketSnapshotsQuery.data]);
 
   return (
     <div className="grid gap-4">
@@ -155,7 +165,9 @@ export function InventoryScreen() {
       {query.error ? <p className="text-sm text-danger">{query.error.message}</p> : null}
 
       <div className="grid gap-2">
-        {items.map((item) => (
+        {items.map((item) => {
+          const latestMarket = latestMarketByItem.get(item.id);
+          return (
           <article key={item.id} className="rounded-lg border border-line bg-white p-3 shadow-sm">
             <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
               {item.imageUrl && (
@@ -181,11 +193,13 @@ export function InventoryScreen() {
                 )}
                 <div className="mt-2 sm:hidden">
                   <p className="text-lg font-black">{formatMoney(item.askingPrice, settingsQuery.data?.currencySymbol)}</p>
+                  {item.itemType === 'single_card' && <MarketPriceLine snapshot={latestMarket} />}
                   <p className={`text-xs font-bold ${item.status === 'in_stock' ? 'text-action' : 'text-warn'}`}>{item.status.replace('_', ' ')}</p>
                 </div>
               </div>
               <div className="hidden text-right sm:block">
                 <p className="text-lg font-black">{formatMoney(item.askingPrice, settingsQuery.data?.currencySymbol)}</p>
+                {item.itemType === 'single_card' && <MarketPriceLine snapshot={latestMarket} align="right" />}
                 <p className={`text-xs font-bold ${item.status === 'in_stock' ? 'text-action' : 'text-warn'}`}>{item.status.replace('_', ' ')}</p>
               </div>
             </div>
@@ -204,7 +218,8 @@ export function InventoryScreen() {
               </Button>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
 
       {formOpen && (
@@ -598,6 +613,22 @@ function ItemTypeChoice({
   );
 }
 
+function MarketPriceLine({ snapshot, align = 'left' }: { snapshot?: MarketPriceSnapshot; align?: 'left' | 'right' }) {
+  if (!snapshot) {
+    return (
+      <div className={`mt-1 text-xs font-bold text-slate-500 ${align === 'right' ? 'text-right' : ''}`}>
+        Market not tracked
+      </div>
+    );
+  }
+  return (
+    <div className={`mt-1 grid gap-0.5 text-xs ${align === 'right' ? 'justify-items-end text-right' : ''}`}>
+      <p className="font-black text-action">Yuyutei {formatJpy(snapshot.price)}</p>
+      <p className="font-semibold text-slate-500">{formatMarketCheckedAt(snapshot.fetchedAt)}</p>
+    </div>
+  );
+}
+
 function MarketLinkPanel({
   item,
   candidates,
@@ -742,4 +773,10 @@ function getContentCrop(context: CanvasRenderingContext2D, width: number, height
 
 function formatJpy(value: number) {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value);
+}
+
+function formatMarketCheckedAt(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Market checked';
+  return `Checked ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
