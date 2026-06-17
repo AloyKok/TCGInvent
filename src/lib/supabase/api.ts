@@ -468,7 +468,13 @@ export async function listMarketPriceSnapshots(orgId: string, limit = 1000) {
 export async function searchYuyuteiMarket(item: InventoryItem) {
   const cardNumber = item.cardNumber?.trim();
   if (!cardNumber) throw new Error('Yuyutei search needs a card number');
-  const data = await invokeYuyuteiMarket<{ candidates: YuyuteiMarketCandidate[] }>({ action: 'search', cardNumber });
+  return searchYuyuteiMarketByCardNumber(cardNumber);
+}
+
+export async function searchYuyuteiMarketByCardNumber(cardNumber: string) {
+  const cleanCardNumber = cardNumber.trim();
+  if (!cleanCardNumber) throw new Error('Yuyutei search needs a card number');
+  const data = await invokeYuyuteiMarket<{ candidates: YuyuteiMarketCandidate[] }>({ action: 'search', cardNumber: cleanCardNumber });
   return data.candidates || [];
 }
 

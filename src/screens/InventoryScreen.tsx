@@ -9,11 +9,13 @@ import {
   generateInventoryItemNumber,
   getSettings,
   listInventory,
+  listMarketMappings,
   listMarketPriceSnapshots,
+  refreshYuyuteiMarket,
   saveInventoryItem,
   saveMarketMapping,
   saveMarketSnapshot,
-  searchYuyuteiMarket,
+  searchYuyuteiMarketByCardNumber,
   type InventoryInput
 } from '../lib/supabase/api';
 import { useOrg } from '../lib/org/OrgProvider';
@@ -27,6 +29,7 @@ import type {
   InventoryFilters,
   InventoryItem,
   InventoryItemType,
+  MarketMapping,
   MarketPriceSnapshot,
   YuyuteiMarketCandidate,
   SealedProductType
@@ -243,7 +246,9 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
   const [selectedType, setSelectedType] = useState<InventoryItemType | null>(item?.itemType || null);
   const [savedItem, setSavedItem] = useState<InventoryItem | null>(null);
   const [marketCandidates, setMarketCandidates] = useState<YuyuteiMarketCandidate[]>([]);
+  const [pendingMarketCandidate, setPendingMarketCandidate] = useState<YuyuteiMarketCandidate | null>(null);
   const [marketLinked, setMarketLinked] = useState(false);
+  const [manualMarketUrl, setManualMarketUrl] = useState('');
   const [input, setInput] = useState<InventoryInput>({
     itemNumber: item?.itemNumber || '',
     autoGenerateItemNumber: !item,
@@ -275,6 +280,24 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
     status: item?.status || 'in_stock'
   });
   const [generatedItemNumber, setGeneratedItemNumber] = useState(item?.itemNumber || '');
+  const mappingsQuery = useQuery({
+    queryKey: ['market-mappings', organization.id, item?.id || 'form'],
+    queryFn: () => listMarketMappings(organization.id),
+    enabled: Boolean(item?.id)
+  });
+  const snapshotsQuery = useQuery({
+    queryKey: ['market-snapshots', organization.id, item?.id || 'form'],
+    queryFn: () => listMarketPriceSnapshots(organization.id),
+    enabled: Boolean(item?.id)
+  });
+  const currentMapping = useMemo(() => {
+    if (!item?.id) return null;
+    return (mappingsQuery.data || []).find((mapping) => mapping.inventoryItemId === item.id && mapping.source === 'yuyutei') || null;
+  }, [item?.id, mappingsQuery.data]);
+  const currentSnapshot = useMemo(() => {
+    if (!item?.id) return null;
+    return (snapshotsQuery.data || []).find((snapshot) => snapshot.inventoryItemId === item.id && snapshot.source === 'yuyutei') || null;
+  }, [item?.id, snapshotsQuery.data]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -313,18 +336,25 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
     },
     onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: ['inventory', organization.id] });
+      if (saved.itemType === 'single_card' && pendingMarketCandidate) {
+        await saveMarketMapping(organization.id, saved.id, pendingMarketCandidate);
+        await saveMarketSnapshot(organization.id, saved.id, pendingMarketCandidate);
+        await invalidateMarket(queryClient, organization.id);
+        onSaved();
+        return;
+      }
       if (saved.itemType === 'single_card' && saved.cardNumber) {
         setSavedItem(saved);
         setMarketLinked(false);
         setMarketCandidates([]);
-        marketSearchMutation.mutate(saved);
+        marketSearchMutation.mutate(saved.cardNumber);
         return;
       }
       onSaved();
     }
   });
   const marketSearchMutation = useMutation({
-    mutationFn: (saved: InventoryItem) => searchYuyuteiMarket(saved),
+    mutationFn: (cardNumber: string) => searchYuyuteiMarketByCardNumber(cardNumber),
     onSuccess: (rows) => setMarketCandidates(rows)
   });
   const marketLinkMutation = useMutation({
@@ -335,10 +365,30 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
     },
     onSuccess: async () => {
       setMarketLinked(true);
-      await queryClient.invalidateQueries({ queryKey: ['market-mappings', organization.id] });
-      await queryClient.invalidateQueries({ queryKey: ['market-snapshots', organization.id] });
+      await invalidateMarket(queryClient, organization.id);
     }
   });
+  const marketRefreshMutation = useMutation({
+    mutationFn: async ({ saved, sourceUrl }: { saved: InventoryItem; sourceUrl: string }) => {
+      const candidate = await refreshYuyuteiMarket(sourceUrl);
+      await saveMarketMapping(organization.id, saved.id, candidate);
+      await saveMarketSnapshot(organization.id, saved.id, candidate);
+      return candidate;
+    },
+    onSuccess: async () => {
+      setManualMarketUrl('');
+      setMarketLinked(true);
+      await invalidateMarket(queryClient, organization.id);
+    }
+  });
+  const marketUrlMutation = useMutation({
+    mutationFn: (sourceUrl: string) => refreshYuyuteiMarket(sourceUrl),
+    onSuccess: (candidate) => {
+      setManualMarketUrl('');
+      linkOrQueueMarketCandidate(candidate);
+    }
+  });
+  const formMarketTarget = savedItem || item;
 
   return (
     <div className="fixed inset-0 z-50 flex min-w-0 items-start justify-center overflow-hidden bg-slate-950/50 sm:items-center sm:p-4">
@@ -404,7 +454,7 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
             {selectedType === 'single_card' && (
               <>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Card number"><TextInput value={input.cardNumber || ''} onChange={(e) => setInput({ ...input, cardNumber: e.target.value })} required /></Field>
+                  <Field label="Card number"><TextInput value={input.cardNumber || ''} onChange={(e) => { setPendingMarketCandidate(null); setInput({ ...input, cardNumber: e.target.value }); }} required /></Field>
                   <Field label="Set name">
                     <SelectInput
                       value={input.setName || ''}
@@ -465,6 +515,32 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
           <Field label="Cost"><TextInput type="number" min={0} step="0.01" value={input.costBasis ?? ''} onChange={(e) => setInput({ ...input, costBasis: e.target.value ? Number(e.target.value) : null })} /></Field>
           <Field label="Asking price"><TextInput type="number" min={0} step="0.01" value={input.askingPrice} onChange={(e) => setInput({ ...input, askingPrice: Number(e.target.value) })} required /></Field>
         </div>
+        {selectedType === 'single_card' && (
+          <InventoryMarketPanel
+            cardNumber={input.cardNumber || ''}
+            targetItem={formMarketTarget}
+            currentMapping={currentMapping}
+            currentSnapshot={currentSnapshot}
+            pendingCandidate={pendingMarketCandidate}
+            candidates={marketCandidates}
+            linked={marketLinked}
+            manualUrl={manualMarketUrl}
+            isSearching={marketSearchMutation.isPending}
+            isLinking={marketLinkMutation.isPending || marketRefreshMutation.isPending || marketUrlMutation.isPending}
+            searchError={marketSearchMutation.error}
+            linkError={marketLinkMutation.error || marketRefreshMutation.error || marketUrlMutation.error}
+            onManualUrlChange={setManualMarketUrl}
+            onSearch={() => marketSearchMutation.mutate(input.cardNumber || '')}
+            onRefreshMapping={() => {
+              const target = formMarketTarget;
+              if (target && currentMapping) marketRefreshMutation.mutate({ saved: target, sourceUrl: currentMapping.sourceUrl });
+            }}
+            onLinkUrl={() => {
+              if (manualMarketUrl.trim()) marketUrlMutation.mutate(manualMarketUrl.trim());
+            }}
+            onLink={linkOrQueueMarketCandidate}
+          />
+        )}
         <div className="rounded-md border border-line p-3">
           <label className="flex min-h-11 items-center gap-3 text-sm font-semibold">
             <input
@@ -522,19 +598,6 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
             />
           </div>
         )}
-        {savedItem && (
-          <MarketLinkPanel
-            item={savedItem}
-            candidates={marketCandidates}
-            linked={marketLinked}
-            isSearching={marketSearchMutation.isPending}
-            isLinking={marketLinkMutation.isPending}
-            searchError={marketSearchMutation.error}
-            linkError={marketLinkMutation.error}
-            onRefresh={() => marketSearchMutation.mutate(savedItem)}
-            onLink={(candidate) => marketLinkMutation.mutate({ saved: savedItem, candidate })}
-          />
-        )}
         <Field label="Notes"><TextArea value={input.notes || ''} onChange={(e) => setInput({ ...input, notes: e.target.value })} /></Field>
         {mutation.error && <p className="text-sm text-danger">{mutation.error.message}</p>}
         <div className="sticky bottom-0 flex gap-2 bg-white pt-2">
@@ -575,6 +638,16 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
       category: itemType === 'single_card' ? current.category || 'Character' : null,
       condition: itemType === 'single_card' ? 'NM' : itemType === 'sealed_product' ? 'SEALED' : 'NEW'
     }));
+  }
+
+  function linkOrQueueMarketCandidate(candidate: YuyuteiMarketCandidate) {
+    const target = savedItem || item;
+    setMarketLinked(true);
+    if (target) {
+      marketLinkMutation.mutate({ saved: target, candidate });
+    } else {
+      setPendingMarketCandidate(candidate);
+    }
   }
 
   async function handlePhotoFile(file: File) {
@@ -629,44 +702,95 @@ function MarketPriceLine({ snapshot, align = 'left' }: { snapshot?: MarketPriceS
   );
 }
 
-function MarketLinkPanel({
-  item,
+function InventoryMarketPanel({
+  cardNumber,
+  targetItem,
+  currentMapping,
+  currentSnapshot,
+  pendingCandidate,
   candidates,
   linked,
+  manualUrl,
   isSearching,
   isLinking,
   searchError,
   linkError,
-  onRefresh,
+  onManualUrlChange,
+  onSearch,
+  onRefreshMapping,
+  onLinkUrl,
   onLink
 }: {
-  item: InventoryItem;
+  cardNumber: string;
+  targetItem?: InventoryItem | null;
+  currentMapping?: MarketMapping | null;
+  currentSnapshot?: MarketPriceSnapshot | null;
+  pendingCandidate?: YuyuteiMarketCandidate | null;
   candidates: YuyuteiMarketCandidate[];
   linked: boolean;
+  manualUrl: string;
   isSearching: boolean;
   isLinking: boolean;
   searchError: Error | null;
   linkError: Error | null;
-  onRefresh: () => void;
+  onManualUrlChange: (value: string) => void;
+  onSearch: () => void;
+  onRefreshMapping: () => void;
+  onLinkUrl: () => void;
   onLink: (candidate: YuyuteiMarketCandidate) => void;
 }) {
+  const hasCardNumber = Boolean(cardNumber.trim());
   return (
     <section className="grid gap-3 rounded-lg border border-action/30 bg-sky-50 p-3">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-black text-action">Track market now</p>
+          <p className="text-sm font-black text-action">Market tracking</p>
           <p className="mt-1 break-words text-sm font-semibold text-slate-600">
-            Saved {item.itemName}. Link the matching Yuyutei result to start tracking prices.
+            Search and link the Yuyutei listing here while adding or editing this card.
           </p>
         </div>
-        <Button type="button" variant="secondary" className="shrink-0 px-3" onClick={onRefresh} disabled={isSearching}>
-          <RefreshCcw size={16} />
+        <Button type="button" variant="secondary" className="flex shrink-0 items-center gap-2 px-3" onClick={onSearch} disabled={!hasCardNumber || isSearching}>
+          <Search size={16} /> Search
+        </Button>
+      </div>
+
+      <div className="grid gap-2 rounded-md border border-line bg-white p-3 text-sm">
+        <div className="flex min-w-0 justify-between gap-3">
+          <span className="font-semibold text-slate-600">Current market</span>
+          <strong className="text-right">{currentSnapshot ? `Yuyutei ${formatJpy(currentSnapshot.price)}` : 'Not linked'}</strong>
+        </div>
+        {currentSnapshot && <p className="text-xs font-semibold text-slate-500">{formatMarketCheckedAt(currentSnapshot.fetchedAt)}</p>}
+        {currentMapping && (
+          <a className="inline-flex min-h-8 min-w-0 items-center gap-1 break-all text-xs font-bold text-sky-700" href={currentMapping.sourceUrl} target="_blank" rel="noreferrer">
+            <ExternalLink size={13} className="shrink-0" /> {currentMapping.displayName || currentMapping.sourceUrl}
+          </a>
+        )}
+        {currentMapping && targetItem && (
+          <Button type="button" variant="secondary" className="mt-1 flex items-center justify-center gap-2" disabled={isLinking} onClick={onRefreshMapping}>
+            <RefreshCcw size={16} /> Refresh linked price
+          </Button>
+        )}
+      </div>
+
+      <div className="grid gap-2 min-[520px]:grid-cols-[minmax(0,1fr)_auto]">
+        <TextInput
+          value={manualUrl}
+          onChange={(event) => onManualUrlChange(event.target.value)}
+          placeholder="Paste Yuyutei card URL"
+        />
+        <Button type="button" variant="secondary" disabled={!manualUrl.trim() || isLinking} onClick={onLinkUrl}>
+          Link URL
         </Button>
       </div>
 
       {linked && (
         <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
-          Market link saved and first price snapshot recorded.
+          {targetItem ? 'Market link saved and price snapshot recorded.' : 'Market result selected. It will be linked when you save the card.'}
+        </p>
+      )}
+      {pendingCandidate && !targetItem && (
+        <p className="rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800">
+          Selected {pendingCandidate.displayName} at {formatJpy(pendingCandidate.price)}.
         </p>
       )}
       {isSearching && <p className="text-sm font-semibold text-slate-600">Searching Yuyutei...</p>}
@@ -676,7 +800,7 @@ function MarketLinkPanel({
       <div className="grid gap-2">
         {!isSearching && candidates.length === 0 && (
           <p className="rounded-md border border-line bg-white px-3 py-2 text-sm font-semibold text-slate-600">
-            No Yuyutei result loaded. You can tap refresh or finish and link later from More / Market.
+            Tap search after entering the card number, or paste a Yuyutei card URL.
           </p>
         )}
         {candidates.map((candidate) => (
@@ -779,4 +903,9 @@ function formatMarketCheckedAt(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Market checked';
   return `Checked ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
+async function invalidateMarket(queryClient: ReturnType<typeof useQueryClient>, orgId: string) {
+  await queryClient.invalidateQueries({ queryKey: ['market-mappings', orgId] });
+  await queryClient.invalidateQueries({ queryKey: ['market-snapshots', orgId] });
 }
