@@ -625,15 +625,30 @@ async function invokeYuyuteiMarket<T>(body: { action: 'search'; cardNumber: stri
       cache: 'no-store',
       body: JSON.stringify(body)
     });
-    if (response.ok) return await response.json() as T;
+    if (response.ok) {
+      const payload = await response.json();
+      if (payload?.error) {
+        throw new Error(formatYuyuteiApiError(String(payload.error)));
+      }
+      return payload as T;
+    }
     const contentType = response.headers.get('content-type') || '';
     const payload = contentType.includes('application/json') ? await response.json().catch(() => null) : null;
-    if (payload?.error) throw new Error(payload.error);
+    if (payload?.error) {
+      throw new Error(formatYuyuteiApiError(String(payload.error)));
+    }
     throw new Error(`Yuyutei lookup failed through the app API (${response.status})`);
   } catch (error) {
     if (error instanceof Error) throw error;
     throw new Error('Yuyutei lookup failed through the app API');
   }
+}
+
+function formatYuyuteiApiError(message: string) {
+  if (message.includes('Yuyutei returned 403')) {
+    return 'Yuyutei is blocking hosted search from Vercel. Enter the Yuyutei URL and JPY price manually, or use local dev for automatic lookup.';
+  }
+  return message;
 }
 
 function itemNumberReference(input: Pick<InventoryInput, 'itemType' | 'cardNumber' | 'productCategory'>) {

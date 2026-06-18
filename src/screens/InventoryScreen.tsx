@@ -249,6 +249,7 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
   const [pendingMarketCandidate, setPendingMarketCandidate] = useState<YuyuteiMarketCandidate | null>(null);
   const [marketLinked, setMarketLinked] = useState(false);
   const [manualMarketUrl, setManualMarketUrl] = useState('');
+  const [manualMarketPrice, setManualMarketPrice] = useState('');
   const [input, setInput] = useState<InventoryInput>({
     itemNumber: item?.itemNumber || '',
     autoGenerateItemNumber: !item,
@@ -388,6 +389,17 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
       linkOrQueueMarketCandidate(candidate);
     }
   });
+  const manualMarketMutation = useMutation({
+    mutationFn: async () => {
+      const candidate = createManualYuyuteiCandidate(manualMarketUrl, manualMarketPrice, input);
+      linkOrQueueMarketCandidate(candidate);
+      return candidate;
+    },
+    onSuccess: () => {
+      setManualMarketUrl('');
+      setManualMarketPrice('');
+    }
+  });
   const formMarketTarget = savedItem || item;
 
   return (
@@ -525,11 +537,13 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
             candidates={marketCandidates}
             linked={marketLinked}
             manualUrl={manualMarketUrl}
+            manualPrice={manualMarketPrice}
             isSearching={marketSearchMutation.isPending}
-            isLinking={marketLinkMutation.isPending || marketRefreshMutation.isPending || marketUrlMutation.isPending}
+            isLinking={marketLinkMutation.isPending || marketRefreshMutation.isPending || marketUrlMutation.isPending || manualMarketMutation.isPending}
             searchError={marketSearchMutation.error}
-            linkError={marketLinkMutation.error || marketRefreshMutation.error || marketUrlMutation.error}
+            linkError={marketLinkMutation.error || marketRefreshMutation.error || marketUrlMutation.error || manualMarketMutation.error}
             onManualUrlChange={setManualMarketUrl}
+            onManualPriceChange={setManualMarketPrice}
             onSearch={() => marketSearchMutation.mutate(input.cardNumber || '')}
             onRefreshMapping={() => {
               const target = formMarketTarget;
@@ -538,6 +552,7 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
             onLinkUrl={() => {
               if (manualMarketUrl.trim()) marketUrlMutation.mutate(manualMarketUrl.trim());
             }}
+            onSaveManualPrice={() => manualMarketMutation.mutate()}
             onLink={linkOrQueueMarketCandidate}
           />
         )}
@@ -660,6 +675,34 @@ function InventoryForm({ item, onClose, onSaved }: { item: InventoryItem | null;
   }
 }
 
+function createManualYuyuteiCandidate(sourceUrl: string, priceInput: string, input: InventoryInput): YuyuteiMarketCandidate {
+  const cleanUrl = sourceUrl.trim();
+  if (!/^https:\/\/yuyu-tei\.jp\/(sell|buy)\/opc\/card\/[a-z0-9-]+\/\d+\/?$/i.test(cleanUrl)) {
+    throw new Error('Enter a valid Yuyutei card URL before saving a manual market price.');
+  }
+  const price = Number(priceInput);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('Enter a valid Yuyutei price in JPY.');
+  }
+  const mode = cleanUrl.includes('/buy/') ? 'buy' : 'sell';
+  const externalId = cleanUrl.match(/\/(sell|buy)\/opc\/card\/([^/]+\/\d+)/i)?.[2] || null;
+  const displayName = [input.rarity, input.itemName].filter(Boolean).join(' ') || input.cardNumber || 'Yuyutei card';
+  return {
+    source: 'yuyutei',
+    mode,
+    sourceUrl: cleanUrl,
+    externalId,
+    cardNumber: input.cardNumber || null,
+    rarity: input.rarity || null,
+    name: input.itemName || displayName,
+    displayName,
+    price,
+    currency: 'JPY',
+    availability: null,
+    imageUrl: null
+  };
+}
+
 function ItemTypeChoice({
   icon,
   title,
@@ -711,14 +754,17 @@ function InventoryMarketPanel({
   candidates,
   linked,
   manualUrl,
+  manualPrice,
   isSearching,
   isLinking,
   searchError,
   linkError,
   onManualUrlChange,
+  onManualPriceChange,
   onSearch,
   onRefreshMapping,
   onLinkUrl,
+  onSaveManualPrice,
   onLink
 }: {
   cardNumber: string;
@@ -729,14 +775,17 @@ function InventoryMarketPanel({
   candidates: YuyuteiMarketCandidate[];
   linked: boolean;
   manualUrl: string;
+  manualPrice: string;
   isSearching: boolean;
   isLinking: boolean;
   searchError: Error | null;
   linkError: Error | null;
   onManualUrlChange: (value: string) => void;
+  onManualPriceChange: (value: string) => void;
   onSearch: () => void;
   onRefreshMapping: () => void;
   onLinkUrl: () => void;
+  onSaveManualPrice: () => void;
   onLink: (candidate: YuyuteiMarketCandidate) => void;
 }) {
   const hasCardNumber = Boolean(cardNumber.trim());
@@ -779,8 +828,28 @@ function InventoryMarketPanel({
           placeholder="Paste Yuyutei card URL"
         />
         <Button type="button" variant="secondary" disabled={!manualUrl.trim() || isLinking} onClick={onLinkUrl}>
-          Link URL
+          Fetch URL
         </Button>
+      </div>
+      <div className="grid gap-2 rounded-md border border-line bg-white p-3">
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Manual fallback</p>
+        <div className="grid gap-2 min-[520px]:grid-cols-[minmax(0,1fr)_auto]">
+          <TextInput
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            value={manualPrice}
+            onChange={(event) => onManualPriceChange(event.target.value)}
+            placeholder="Yuyutei price in JPY"
+          />
+          <Button type="button" variant="secondary" disabled={!manualUrl.trim() || !manualPrice.trim() || isLinking} onClick={onSaveManualPrice}>
+            Save price
+          </Button>
+        </div>
+        <p className="text-xs font-semibold text-slate-500">
+          Use this when hosted Yuyutei search is blocked. It saves the link and price without fetching the page.
+        </p>
       </div>
 
       {linked && (

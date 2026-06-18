@@ -23,6 +23,10 @@ export default async function handler(request: { method?: string; body?: unknown
     const result = await handleYuyuteiMarket(request.body as { action?: string; cardNumber?: string; sourceUrl?: string });
     response.status(result.status).json(result.body);
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Yuyutei returned 403')) {
+      response.status(200).json({ error: error.message });
+      return;
+    }
     response.status(500).json({ error: error instanceof Error ? error.message : 'Yuyutei fetch failed' });
   }
 }
