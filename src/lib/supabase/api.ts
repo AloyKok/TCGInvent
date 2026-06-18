@@ -619,17 +619,20 @@ async function assertUniqueItemNumber(orgId: string, itemNumber: string, exclude
 
 async function invokeYuyuteiMarket<T>(body: { action: 'search'; cardNumber: string } | { action: 'refresh'; sourceUrl: string }) {
   try {
-    const response = await fetch('/api/yuyutei-market', {
+    const response = await fetch(`/api/yuyutei-market?t=${Date.now()}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      cache: 'no-store',
       body: JSON.stringify(body)
     });
     if (response.ok) return await response.json() as T;
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.error || 'Yuyutei request failed');
+    const contentType = response.headers.get('content-type') || '';
+    const payload = contentType.includes('application/json') ? await response.json().catch(() => null) : null;
+    if (payload?.error) throw new Error(payload.error);
+    throw new Error(`Yuyutei lookup failed through the app API (${response.status})`);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error('Yuyutei request failed');
+    throw new Error('Yuyutei lookup failed through the app API');
   }
 }
 

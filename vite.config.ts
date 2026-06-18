@@ -17,6 +17,7 @@ export default defineConfig({
           response.setHeader('Access-Control-Allow-Origin', '*');
           response.setHeader('Access-Control-Allow-Headers', 'content-type');
           response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+          response.setHeader('Cache-Control', 'no-store');
           if (request.method === 'OPTIONS') {
             response.statusCode = 200;
             response.end();
